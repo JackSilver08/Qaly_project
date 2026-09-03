@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 using System.Text;
@@ -31,6 +32,10 @@ public partial class EmailDigestWorker : BackgroundService
             {
                 await SendDigestsAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 LogErrorSendingDigests(_logger, ex);
@@ -40,7 +45,7 @@ public partial class EmailDigestWorker : BackgroundService
             {
                 await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
@@ -62,6 +67,7 @@ public partial class EmailDigestWorker : BackgroundService
             .Where(item => item.IsEnabled && item.NextDeliveryAt != null && item.NextDeliveryAt <= now &&
                 (item.LastDeliveryStatus != "sending" || item.LastAttemptAt == null || item.LastAttemptAt < staleClaim))
             .OrderBy(item => item.NextDeliveryAt)
+            .ThenBy(item => item.Id)
             .Select(item => item.Id)
             .Take(100)
             .ToListAsync(ct);
@@ -75,14 +81,17 @@ public partial class EmailDigestWorker : BackgroundService
             if (subscription == null || !subscription.IsEnabled || subscription.NextDeliveryAt is not { } scheduledAt || scheduledAt > DateTimeOffset.UtcNow)
                 continue;
 
-            var systemTier = await authorization.ResolveSystemTierAsync(
-                subscription.UserId, subscription.User.Role, ct);
-            var projectPermission = await authorization.ResolveProjectAsync(
-                subscription.Project,
-                subscription.UserId,
-                ProjectRoleRules.IsSystemAdmin(subscription.User.Role),
-                ct);
-            if (systemTier == AiNativeSystemTier.Restricted || !projectPermission.CanRead)
+            var systemTier = subscription.User.IsActive
+                ? await authorization.ResolveSystemTierAsync(subscription.UserId, subscription.User.Role, ct)
+                : AiNativeSystemTier.Restricted;
+            var projectPermission = subscription.User.IsActive
+                ? await authorization.ResolveProjectAsync(
+                    subscription.Project,
+                    subscription.UserId,
+                    ProjectRoleRules.IsSystemAdmin(subscription.User.Role),
+                    ct)
+                : new AiNativeProjectAuthorization(false, false, false, AiCapabilityTier.None);
+            if (!subscription.User.IsActive || systemTier == AiNativeSystemTier.Restricted || !projectPermission.CanRead)
             {
                 // A scheduled external effect must re-check the same authorization
                 // boundary as interactive reads. Removing a member or restricting AI
@@ -117,10 +126,12 @@ public partial class EmailDigestWorker : BackgroundService
 
             try
             {
+                var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(subscription.User.Role);
                 var digestContent = await BuildDigestContentAsync(
                     db,
                     subscription,
                     projectPermission.CanManage,
+                    isSystemAdmin,
                     ct);
                 await emailService.SendAsync(subscription.User.Email,
                     $"Qaly weekly digest · {subscription.Project.Name}", digestContent, ct);
@@ -131,9 +142,13 @@ public partial class EmailDigestWorker : BackgroundService
                 subscription.NextDeliveryAt = NextScheduledDelivery(subscription, DateTimeOffset.UtcNow);
                 subscription.Revision++;
                 await db.SaveChangesAsync(ct);
-                LogSentDigest(_logger, subscription.User.Email);
+                LogSentDigest(_logger, subscription.Id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
             {
                 subscription.LastDeliveryStatus = "retry";
                 subscription.LastError = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
@@ -151,19 +166,27 @@ public partial class EmailDigestWorker : BackgroundService
         QalyDbContext db,
         ProjectDigestSubscription subscription,
         bool canManageProject,
+        bool isSystemAdmin,
         CancellationToken ct)
     {
         var sb = new StringBuilder();
         var tasks = await db.TaskItems.AsNoTracking()
             .Where(task => task.ProjectId == subscription.ProjectId &&
                 (canManageProject || task.AssigneeId == subscription.UserId ||
+                    task.Assignees.Any(item => item.UserId == subscription.UserId)) &&
+                (!task.IsPrivate ||
+                    isSystemAdmin ||
+                    subscription.Project.OwnerId == subscription.UserId ||
+                    task.ReporterId == subscription.UserId ||
+                    task.AssigneeId == subscription.UserId ||
                     task.Assignees.Any(item => item.UserId == subscription.UserId)))
             .OrderBy(task => task.DueDate)
+            .ThenBy(task => task.Id)
             .Take(100)
             .Select(task => new { task.Id, task.Title, task.Status, task.DueDate })
             .ToListAsync(ct);
         var now = DateTimeOffset.UtcNow;
-        var open = tasks.Where(task => task.Status is not "Done" and not "Completed" and not "Cancelled").ToList();
+        var open = tasks.Where(task => TaskStatusRules.IsOpen(task.Status)).ToList();
         var overdue = open.Where(task => task.DueDate < now).ToList();
 
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Project: {subscription.Project.Name}");
@@ -221,8 +244,8 @@ public partial class EmailDigestWorker : BackgroundService
     [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "Could not fetch active users for email digest: {Message}")]
     private static partial void LogFetchUsersWarning(ILogger logger, string message);
 
-    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Sent Email Digest to {Email}")]
-    private static partial void LogSentDigest(ILogger logger, string email);
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "Sent email digest for subscription {SubscriptionId}.")]
+    private static partial void LogSentDigest(ILogger logger, Guid subscriptionId);
 
     [LoggerMessage(EventId = 7, Level = LogLevel.Warning, Message = "Digest {SubscriptionId} ({DeliveryKey}) will retry in {RetryMinutes} minutes: {Message}")]
     private static partial void LogDigestRetry(ILogger logger, Guid subscriptionId, string deliveryKey, int retryMinutes, string message);

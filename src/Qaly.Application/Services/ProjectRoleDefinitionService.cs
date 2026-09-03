@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Project;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -32,6 +33,7 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public ProjectRoleDefinitionService(
         IRepository<ProjectRoleDefinition> definitionRepo,
@@ -42,7 +44,8 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         IProjectRoleCatalog roleCatalog,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _definitionRepo = definitionRepo;
         _organizationRepo = organizationRepo;
@@ -53,6 +56,7 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     public async Task<Result<IReadOnlyList<ProjectRoleDefinitionDto>>> GetByOrganizationAsync(
@@ -156,8 +160,8 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         };
 
         await _definitionRepo.AddAsync(definition, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "CreateProjectRoleDefinition",
             nameof(ProjectRoleDefinition),
             definition.Id.ToString(),
@@ -199,8 +203,8 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         definition.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _definitionRepo.UpdateAsync(definition, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "UpdateProjectRoleDefinition",
             nameof(ProjectRoleDefinition),
             definition.Id.ToString(),
@@ -241,8 +245,8 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         }
 
         await _definitionRepo.DeleteAsync(definition, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "DeleteProjectRoleDefinition",
             nameof(ProjectRoleDefinition),
             definitionId.ToString(),
@@ -362,13 +366,19 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         }
 
         if (await _organizationRepo.GetQueryable()
-            .AnyAsync(organization => organization.Id == organizationId && organization.OwnerId == currentUserId, ct))
+            .AnyAsync(organization =>
+                organization.Id == organizationId && organization.IsActive && organization.OwnerId == currentUserId,
+                ct))
         {
             return true;
         }
 
         return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == organizationId && member.UserId == currentUserId, ct);
+            .AnyAsync(member =>
+                member.OrganizationId == organizationId &&
+                member.UserId == currentUserId &&
+                member.Organization.IsActive,
+                ct);
     }
 
     private async Task<bool> CanManageOrganizationAsync(Guid organizationId, CancellationToken ct)
@@ -385,13 +395,18 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
         }
 
         if (await _organizationRepo.GetQueryable()
-            .AnyAsync(organization => organization.Id == organizationId && organization.OwnerId == currentUserId, ct))
+            .AnyAsync(organization =>
+                organization.Id == organizationId && organization.IsActive && organization.OwnerId == currentUserId,
+                ct))
         {
             return true;
         }
 
         var role = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == organizationId && member.UserId == currentUserId)
+            .Where(member =>
+                member.OrganizationId == organizationId &&
+                member.UserId == currentUserId &&
+                member.Organization.IsActive)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
 
@@ -399,19 +414,5 @@ public class ProjectRoleDefinitionService : IProjectRoleDefinitionService
     }
 
     private async Task<bool> CanAccessProjectAsync(Project project, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (ProjectRoleRules.IsSystemAdmin(_currentUserService.Role) || project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == project.Id && member.UserId == currentUserId, ct);
-    }
+        => await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct);
 }

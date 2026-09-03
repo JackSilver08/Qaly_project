@@ -8,7 +8,9 @@ public class SystemModulePermissionConfiguration : IEntityTypeConfiguration<Syst
 {
     public void Configure(EntityTypeBuilder<SystemModulePermission> builder)
     {
-        builder.ToTable("SystemModulePermissions");
+        builder.ToTable("SystemModulePermissions", table => table.HasCheckConstraint(
+            "CK_SystemModulePermissions_ExactlyOneScope",
+            "([UserId] IS NOT NULL AND [SystemRole] IS NULL) OR ([UserId] IS NULL AND [SystemRole] IS NOT NULL)"));
 
         builder.HasKey(p => p.Id);
 
@@ -28,7 +30,11 @@ public class SystemModulePermissionConfiguration : IEntityTypeConfiguration<Syst
             .HasForeignKey(p => p.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(p => new { p.SystemRole, p.ModuleKey });
-        builder.HasIndex(p => new { p.UserId, p.ModuleKey });
+        builder.HasIndex(p => new { p.SystemRole, p.ModuleKey })
+            .IsUnique()
+            .HasFilter("[SystemRole] IS NOT NULL AND [UserId] IS NULL");
+        builder.HasIndex(p => new { p.UserId, p.ModuleKey })
+            .IsUnique()
+            .HasFilter("[UserId] IS NOT NULL AND [SystemRole] IS NULL");
     }
 }

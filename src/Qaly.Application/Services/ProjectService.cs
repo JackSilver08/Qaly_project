@@ -109,14 +109,7 @@ public class ProjectService : IProjectService
 
         if (!IsAdmin())
         {
-            query = query.Where(project =>
-                (project.OwnerId == currentUserId ||
-                 project.Members.Any(member => member.UserId == currentUserId)) &&
-                (project.OrganizationId == null ||
-                 (project.Organization != null &&
-                  project.Organization.IsActive &&
-                  (project.Organization.OwnerId == currentUserId ||
-                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
+            query = ApplyAccessibleProjectFilter(query, currentUserId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -128,6 +121,7 @@ public class ProjectService : IProjectService
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -157,16 +151,12 @@ public class ProjectService : IProjectService
             return Result.Forbidden<PagedResult<ProjectDto>>();
         }
 
-        var query = ProjectDetailsQuery()
-            .Where(p => p.OwnerId == userId ||
-                        p.Members.Any(m => m.UserId == userId) ||
-                        (p.OrganizationId != null &&
-                         (p.Organization!.OwnerId == userId ||
-                          p.Organization.Members.Any(m => m.UserId == userId))));
+        var query = ApplyAccessibleProjectFilter(ProjectDetailsQuery(), userId);
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -231,8 +221,6 @@ public class ProjectService : IProjectService
 
         await _projectRepo.AddAsync(project, ct);
         await AddToOutboxAsync("ProjectCreated", new { Id = project.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
         await _memberRepo.AddAsync(new ProjectMember
         {
             ProjectId = project.Id,
@@ -244,8 +232,14 @@ public class ProjectService : IProjectService
             CanViewUnseenTaskSignal = true
         }, ct);
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(Project), project.Id.ToString(), new { project.Name }, ct);
+        // Project, owner membership and its durable sync signal are one canonical graph.
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(Project),
+            project.Id.ToString(),
+            new { project.Name },
+            ct);
 
         return await GetByIdAsync(project.Id, ct);
     }
@@ -306,8 +300,13 @@ public class ProjectService : IProjectService
 
         await _projectRepo.UpdateAsync(project, ct);
         await AddToOutboxAsync("ProjectUpdated", new { Id = project.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Update", nameof(Project), project.Id.ToString(), dto, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Update",
+            nameof(Project),
+            project.Id.ToString(),
+            dto,
+            ct);
 
         return await GetByIdAsync(id, ct);
     }
@@ -327,8 +326,13 @@ public class ProjectService : IProjectService
 
         await _projectRepo.DeleteAsync(project, ct);
         await AddToOutboxAsync("ProjectDeleted", new { Id = project.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Delete", nameof(Project), id.ToString(), new { project.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Delete",
+            nameof(Project),
+            id.ToString(),
+            new { project.Name },
+            ct);
 
         return Result.Success();
     }
@@ -377,9 +381,14 @@ public class ProjectService : IProjectService
             existingMember.Role = memberRole;
             await _memberRepo.UpdateAsync(existingMember, ct);
             var backfilledOrganization = await EnsureOrganizationMembershipAsync(project, userId, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("UpdateMemberRole", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
-            await LogOrganizationBackfillAsync(backfilledOrganization, project, userId, ct);
+            await StageOrganizationBackfillAsync(backfilledOrganization, project, userId, ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "UpdateMemberRole",
+                nameof(Project),
+                projectId.ToString(),
+                new { userId, role = memberRole },
+                ct);
             return Result.Success();
         }
 
@@ -395,9 +404,14 @@ public class ProjectService : IProjectService
         }, ct);
 
         var organizationBackfilled = await EnsureOrganizationMembershipAsync(project, userId, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AddMember", nameof(Project), projectId.ToString(), new { userId, role = memberRole }, ct);
-        await LogOrganizationBackfillAsync(organizationBackfilled, project, userId, ct);
+        await StageOrganizationBackfillAsync(organizationBackfilled, project, userId, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "AddMember",
+            nameof(Project),
+            projectId.ToString(),
+            new { userId, role = memberRole },
+            ct);
         await _notificationService.CreateAsync(
             userId,
             $"You were added to project \"{project.Name}\".",
@@ -438,8 +452,13 @@ public class ProjectService : IProjectService
         }
 
         await _memberRepo.DeleteAsync(member, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RemoveMember", nameof(Project), projectId.ToString(), new { userId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RemoveMember",
+            nameof(Project),
+            projectId.ToString(),
+            new { userId },
+            ct);
 
         return Result.Success();
     }
@@ -476,15 +495,20 @@ public class ProjectService : IProjectService
         member.CanViewUnseenTaskSignal = dto.CanViewUnseenTaskSignal;
 
         await _memberRepo.UpdateAsync(member, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UpdateMemberPermissions", nameof(Project), projectId.ToString(), new
-        {
-            userId,
-            dto.CanViewProjectTimeline,
-            dto.CanViewTaskRisk,
-            dto.CanNudgeAssignee,
-            dto.CanViewUnseenTaskSignal
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "UpdateMemberPermissions",
+            nameof(Project),
+            projectId.ToString(),
+            new
+            {
+                userId,
+                dto.CanViewProjectTimeline,
+                dto.CanViewTaskRisk,
+                dto.CanNudgeAssignee,
+                dto.CanViewUnseenTaskSignal
+            },
+            ct);
 
         return Result.Success();
     }
@@ -545,8 +569,13 @@ public class ProjectService : IProjectService
         };
 
         await _labelRepo.AddAsync(label, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("CreateLabel", nameof(Project), projectId.ToString(), new { label.Name, label.Color }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CreateLabel",
+            nameof(Project),
+            projectId.ToString(),
+            new { label.Name, label.Color },
+            ct);
 
         return Result.Created(label.ToDto());
     }
@@ -583,8 +612,13 @@ public class ProjectService : IProjectService
         label.Name = newName;
         label.Color = NormalizeHexColor(dto.Color);
         await _labelRepo.UpdateAsync(label, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UpdateLabel", nameof(Project), projectId.ToString(), new { label.Id, label.Name, label.Color }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "UpdateLabel",
+            nameof(Project),
+            projectId.ToString(),
+            new { label.Id, label.Name, label.Color },
+            ct);
 
         return Result.Success(label.ToDto());
     }
@@ -605,8 +639,13 @@ public class ProjectService : IProjectService
         }
 
         await _labelRepo.DeleteAsync(label, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("DeleteLabel", nameof(Project), projectId.ToString(), new { label.Id, label.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "DeleteLabel",
+            nameof(Project),
+            projectId.ToString(),
+            new { label.Id, label.Name },
+            ct);
 
         return Result.Success();
     }
@@ -652,7 +691,8 @@ public class ProjectService : IProjectService
         var permissions = ProjectPermissionRules.Resolve(
             effectiveRole,
             isOwner: currentUserId != null && project.OwnerId == currentUserId,
-            isSystemAdmin: IsAdmin());
+            isSystemAdmin: IsAdmin(),
+            isOrganizationManager: IsCurrentUserOrganizationManager(project));
 
         // Show the organization's own label while permissions stay driven by the inherited role.
         if (custom != null)
@@ -724,6 +764,48 @@ public class ProjectService : IProjectService
                 task.Project.OwnerId == currentUserId));
     }
 
+    /// <summary>
+    /// Canonical Project visibility for list-style queries. Organization Owner/Admin has portfolio
+    /// authority; other Organization roles still require an explicit Project ownership/membership
+    /// row. An inactive Organization closes every non-system-admin path.
+    /// </summary>
+    private static IQueryable<Project> ApplyAccessibleProjectFilter(IQueryable<Project> query, Guid userId)
+        => query.Where(project =>
+            project.OrganizationId == null
+                ? project.OwnerId == userId || project.Members.Any(member => member.UserId == userId)
+                : project.Organization != null &&
+                  project.Organization.IsActive &&
+                  (
+                      project.Organization.OwnerId == userId ||
+                      project.Organization.Members.Any(member =>
+                          member.UserId == userId &&
+                          (member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                           member.Role == "Admin" ||
+                           member.Role == "Manager")) ||
+                      (
+                          (project.OwnerId == userId || project.Members.Any(member => member.UserId == userId)) &&
+                          project.Organization.Members.Any(member => member.UserId == userId)
+                      )
+                  ));
+
+    private bool IsCurrentUserOrganizationManager(Project project)
+    {
+        var currentUserId = _currentUserService.UserId;
+        if (!currentUserId.HasValue || project.Organization == null || !project.Organization.IsActive)
+        {
+            return false;
+        }
+
+        if (project.Organization.OwnerId == currentUserId.Value)
+        {
+            return true;
+        }
+
+        var role = project.Organization.Members
+            .FirstOrDefault(member => member.UserId == currentUserId.Value)?.Role;
+        return OrganizationRoleRules.CanManageOrganization(role);
+    }
+
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
     {
         if (!await HasActiveCurrentUserAsync(ct))
@@ -754,7 +836,13 @@ public class ProjectService : IProjectService
             {
                 project.OrganizationId,
                 OrganizationIsActive = project.Organization != null && project.Organization.IsActive,
-                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null
+                OrganizationOwnerId = project.Organization != null ? (Guid?)project.Organization.OwnerId : null,
+                OrganizationRole = project.Organization == null
+                    ? null
+                    : project.Organization.Members
+                        .Where(member => member.UserId == currentUserId)
+                        .Select(member => member.Role)
+                        .FirstOrDefault()
             })
             .FirstOrDefaultAsync(ct);
 
@@ -765,12 +853,16 @@ public class ProjectService : IProjectService
 
         if (projectInfo?.OrganizationId != null &&
             projectInfo.OrganizationOwnerId != currentUserId &&
-            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
-                member.OrganizationId == projectInfo.OrganizationId.Value &&
-                member.UserId == currentUserId,
-                ct))
+            string.IsNullOrWhiteSpace(projectInfo.OrganizationRole))
         {
             return false;
+        }
+
+        if (projectInfo?.OrganizationId != null &&
+            (projectInfo.OrganizationOwnerId == currentUserId ||
+             OrganizationRoleRules.CanManageOrganization(projectInfo.OrganizationRole)))
+        {
+            return true;
         }
 
         if (ownerId == currentUserId)
@@ -812,6 +904,24 @@ public class ProjectService : IProjectService
         }
 
         if (ownerId == currentUserId)
+        {
+            return true;
+        }
+
+        var organizationAuthority = await _projectRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(project => project.Id == projectId && project.Organization != null)
+            .Select(project => new
+            {
+                IsOwner = project.Organization!.OwnerId == currentUserId,
+                Role = project.Organization.Members
+                    .Where(member => member.UserId == currentUserId)
+                    .Select(member => member.Role)
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync(ct);
+        if (organizationAuthority != null &&
+            (organizationAuthority.IsOwner || OrganizationRoleRules.CanManageOrganization(organizationAuthority.Role)))
         {
             return true;
         }
@@ -871,9 +981,9 @@ public class ProjectService : IProjectService
         return true;
     }
 
-    private Task LogOrganizationBackfillAsync(bool backfilled, Project project, Guid userId, CancellationToken ct)
+    private Task StageOrganizationBackfillAsync(bool backfilled, Project project, Guid userId, CancellationToken ct)
         => backfilled && project.OrganizationId.HasValue
-            ? _auditLogService.LogAsync(
+            ? _auditLogService.StageAsync(
                 "AddOrganizationMemberViaProject",
                 nameof(Organization),
                 project.OrganizationId.Value.ToString(),
@@ -1017,19 +1127,13 @@ public class ProjectService : IProjectService
 
         if (!IsAdmin())
         {
-            query = query.Where(project =>
-                (project.OwnerId == currentUserId ||
-                 project.Members.Any(member => member.UserId == currentUserId)) &&
-                (project.OrganizationId == null ||
-                 (project.Organization != null &&
-                  project.Organization.IsActive &&
-                  (project.Organization.OwnerId == currentUserId ||
-                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
+            query = ApplyAccessibleProjectFilter(query, currentUserId.Value);
         }
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(p => p.DeletedAt)
+            .ThenBy(p => p.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -1066,8 +1170,13 @@ public class ProjectService : IProjectService
 
         await _projectRepo.UpdateAsync(project, ct);
         await AddToOutboxAsync("ProjectRestored", new { Id = project.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Restore", nameof(Project), id.ToString(), new { project.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Restore",
+            nameof(Project),
+            id.ToString(),
+            new { project.Name },
+            ct);
 
         return Result.Success();
     }
@@ -1092,8 +1201,13 @@ public class ProjectService : IProjectService
 
         await _projectRepo.HardDeleteAsync(project, ct);
         await AddToOutboxAsync("ProjectHardDeleted", new { Id = project.Id }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("HardDelete", nameof(Project), id.ToString(), new { project.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "HardDelete",
+            nameof(Project),
+            id.ToString(),
+            new { project.Name },
+            ct);
 
         return Result.Success();
     }
@@ -1167,14 +1281,7 @@ public class ProjectService : IProjectService
 
         if (!IsAdmin())
         {
-            query = query.Where(project =>
-                (project.OwnerId == currentUserId ||
-                 project.Members.Any(member => member.UserId == currentUserId)) &&
-                (project.OrganizationId == null ||
-                 (project.Organization != null &&
-                  project.Organization.IsActive &&
-                  (project.Organization.OwnerId == currentUserId ||
-                   project.Organization.Members.Any(member => member.UserId == currentUserId)))));
+            query = ApplyAccessibleProjectFilter(query, currentUserId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -1186,6 +1293,7 @@ public class ProjectService : IProjectService
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(p => p.ArchivedAt ?? p.UpdatedAt)
+            .ThenBy(p => p.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);

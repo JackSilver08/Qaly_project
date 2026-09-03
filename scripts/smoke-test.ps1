@@ -1,10 +1,12 @@
 param(
     [string]$BaseUrl = "http://127.0.0.1:5000",
-    [int]$TimeoutSeconds = 60
+    [int]$TimeoutSeconds = 60,
+    [ValidateSet("live", "ready")]
+    [string]$Probe = "ready"
 )
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-$healthUrl = "$($BaseUrl.TrimEnd('/'))/health"
+$healthUrl = "$($BaseUrl.TrimEnd('/'))/health/$Probe"
 
 do {
     try {

@@ -58,7 +58,7 @@ public class ProjectServiceTests : IDisposable
         _audit = new Mock<IAuditLogService>();
     }
 
-    private ProjectService CreateService()
+    private ProjectService CreateService(IUnitOfWork? unitOfWork = null)
     {
         return new ProjectService(
             _projectRepo,
@@ -72,7 +72,7 @@ public class ProjectServiceTests : IDisposable
             _outboxRepo,
             _roleDefinitionRepo,
             _roleCatalog,
-            _uow,
+            unitOfWork ?? _uow,
             _fileStorage.Object,
             _currentUser.Object,
             _notification.Object,
@@ -108,6 +108,48 @@ public class ProjectServiceTests : IDisposable
 
         (await _projectRepo.CountAsync()).Should().Be(1);
         (await _memberRepo.CountAsync()).Should().Be(1); // Owner added as member
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAuditStagingFails_DoesNotCommitProjectGraphOrOutbox()
+    {
+        var userId = Guid.NewGuid();
+        await _userRepo.AddAsync(new User
+        {
+            Id = userId,
+            FullName = "Owner",
+            Email = "project-audit-failure@qaly.dev",
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.Setup(service => service.UserId).Returns(userId);
+        _audit
+            .Setup(service => service.StageAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<object?>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated audit staging failure"));
+        var unitOfWork = new CountingUnitOfWork(_context);
+        var service = CreateService(unitOfWork);
+
+        var action = () => service.CreateAsync(new CreateProjectDto(
+            "Must Roll Back",
+            "rollback-project",
+            null,
+            null,
+            null,
+            null));
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("simulated audit staging failure");
+        unitOfWork.SaveCount.Should().Be(0);
+
+        _context.ChangeTracker.Clear();
+        (await _context.Projects.CountAsync()).Should().Be(0);
+        (await _context.ProjectMembers.CountAsync()).Should().Be(0);
+        (await _context.VectorSyncOutbox.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -656,6 +698,104 @@ public class ProjectServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         (await _memberRepo.GetQueryable().AnyAsync(member =>
             member.ProjectId == projectId && member.UserId == newMemberId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetByUserAsync_DoesNotTreatOrdinaryOrganizationMembershipAsProjectAccess()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        await _userRepo.AddAsync(new User { Id = ownerId, IsActive = true, Email = $"owner-{Guid.NewGuid():N}@qaly.dev", FullName = "Owner" });
+        await _userRepo.AddAsync(new User { Id = memberId, IsActive = true, Email = $"member-{Guid.NewGuid():N}@qaly.dev", FullName = "Member" });
+        await _organizationRepo.AddAsync(new Organization
+        {
+            Id = organizationId,
+            Name = "Scoped tenant",
+            Code = $"scoped-{Guid.NewGuid():N}",
+            OwnerId = ownerId,
+            IsActive = true
+        });
+        await _organizationMemberRepo.AddAsync(new OrganizationMember
+        {
+            OrganizationId = organizationId,
+            UserId = memberId,
+            Role = OrganizationRoleRules.Member
+        });
+        await _projectRepo.AddAsync(new Project
+        {
+            Name = "Not automatically visible",
+            OwnerId = ownerId,
+            OrganizationId = organizationId
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(memberId);
+
+        var result = await CreateService().GetByUserAsync(memberId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Items.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OrganizationAdminCanReadAndManagePortfolioProjectWithoutProjectMembership()
+    {
+        var ownerId = Guid.NewGuid();
+        var adminId = Guid.NewGuid();
+        var newMemberId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var projectId = Guid.NewGuid();
+        await _userRepo.AddAsync(new User { Id = ownerId, IsActive = true, Email = $"owner-{Guid.NewGuid():N}@qaly.dev", FullName = "Owner" });
+        await _userRepo.AddAsync(new User { Id = adminId, IsActive = true, Email = $"admin-{Guid.NewGuid():N}@qaly.dev", FullName = "Organization admin" });
+        await _userRepo.AddAsync(new User { Id = newMemberId, IsActive = true, Email = $"new-{Guid.NewGuid():N}@qaly.dev", FullName = "New member" });
+        await _organizationRepo.AddAsync(new Organization
+        {
+            Id = organizationId,
+            Name = "Managed tenant",
+            Code = $"managed-{Guid.NewGuid():N}",
+            OwnerId = ownerId,
+            IsActive = true
+        });
+        await _organizationMemberRepo.AddAsync(new OrganizationMember
+        {
+            OrganizationId = organizationId,
+            UserId = adminId,
+            Role = OrganizationRoleRules.OrganizationAdmin
+        });
+        await _projectRepo.AddAsync(new Project
+        {
+            Id = projectId,
+            Name = "Portfolio project",
+            OwnerId = ownerId,
+            OrganizationId = organizationId
+        });
+        await _context.SaveChangesAsync();
+        _currentUser.SetupGet(user => user.UserId).Returns(adminId);
+
+        var service = CreateService();
+        var project = await service.GetByIdAsync(projectId);
+        var addMember = await service.AddMemberAsync(projectId, newMemberId, ProjectRoleRules.Member);
+
+        project.IsSuccess.Should().BeTrue(project.Error);
+        var permissions = project.Data!.Permissions!;
+        permissions.CanManageProject.Should().BeTrue();
+        permissions.Role.Should().Be(OrganizationRoleRules.OrganizationAdmin);
+        addMember.IsSuccess.Should().BeTrue(addMember.Error);
+    }
+
+    private sealed class CountingUnitOfWork(QalyDbContext context) : IUnitOfWork
+    {
+        public int SaveCount { get; private set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCount++;
+            return context.SaveChangesAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 }
 #pragma warning restore CA1707

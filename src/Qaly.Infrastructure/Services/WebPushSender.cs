@@ -68,6 +68,9 @@ public partial class WebPushSender : IPushSender
     [LoggerMessage(EventId = 7, Level = LogLevel.Information, Message = "Web push is explicitly disabled for this environment.")]
     private static partial void LogPushDisabled(ILogger logger);
 
+    [LoggerMessage(EventId = 8, Level = LogLevel.Warning, Message = "Failed to remove expired push subscription {Endpoint}.")]
+    private static partial void LogFailedRemoveExpiredSubscription(ILogger logger, Exception ex, string endpoint);
+
     public async Task SendAsync(System.Guid userId, string title, string message, object? data = null, CancellationToken ct = default)
     {
         if (_vapid == null)
@@ -110,7 +113,10 @@ public partial class WebPushSender : IPushSender
                     {
                         await _pushRepo.DeleteAsync(sub, ct);
                     }
-                    catch { }
+                    catch (Exception deleteException)
+                    {
+                        LogFailedRemoveExpiredSubscription(_logger, deleteException, sub.Endpoint);
+                    }
                 }
             }
             catch (Exception ex)

@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Qaly.Application.DTOs.GitHub;
+using Qaly.Application.Services;
 using Qaly.Application.Services.GitHub;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Entities.GitHub;
 using Qaly.Domain.Interfaces;
@@ -42,7 +44,13 @@ public class GitHubRepositoryConnectionServiceTests : IDisposable
             new GenericRepository<Project>(_context),
             new GenericRepository<ProjectMember>(_context),
             new GenericRepository<OrganizationMember>(_context),
-            _currentUser.Object);
+            _currentUser.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_context),
+                new GenericRepository<ProjectMember>(_context),
+                new GenericRepository<OrganizationMember>(_context),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context))));
 
         _service = new GitHubRepositoryConnectionService(
             new GenericRepository<GitHubRepositoryConnection>(_context),
@@ -197,6 +205,12 @@ public class GitHubRepositoryConnectionServiceTests : IDisposable
             UserId = memberId,
             Role = "Developer"
         });
+        _context.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = _orgA,
+            UserId = memberId,
+            Role = OrganizationRoleRules.Member
+        });
         await _context.SaveChangesAsync();
         ActAs(memberId);
 
@@ -214,6 +228,12 @@ public class GitHubRepositoryConnectionServiceTests : IDisposable
             ProjectId = _projectA,
             UserId = memberId,
             Role = "Developer"
+        });
+        _context.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = _orgA,
+            UserId = memberId,
+            Role = OrganizationRoleRules.Member
         });
         await _context.SaveChangesAsync();
         ActAs(memberId);

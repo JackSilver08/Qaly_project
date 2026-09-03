@@ -211,8 +211,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             }, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
             "UpdateMemberCapacityProfile",
             nameof(OrganizationMemberCapacityProfile),
             profile.Id.ToString(),
@@ -583,8 +583,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             PromptHash = requestHash,
             ResponseHash = resultHash
         }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("CreatePortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, taskCount = items.Count, schemaId = SchemaId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "CreatePortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, taskCount = items.Count, schemaId = SchemaId },
+            ct);
         return await GetProposalAsync(projectId, draft.Id, ct);
     }
 
@@ -636,8 +641,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         payload = payload with { Items = dto.Items.ToList() };
         draft.WorkingPayloadJson = JsonSerializer.Serialize(payload, JsonOptions);
         draft.PayloadJson = draft.WorkingPayloadJson;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("UpdatePortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, itemCount = dto.Items.Count }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "UpdatePortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, itemCount = dto.Items.Count },
+            ct);
         return Result.Success(ToDto(draft));
     }
 
@@ -768,8 +778,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             VerificationErrors = verificationErrors
         };
         draft.ConfirmationResultJson = JsonSerializer.Serialize(receipt, JsonOptions);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("ConfirmPortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, receipt.AppliedCount, receipt.AppliedTaskIds }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "ConfirmPortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, receipt.AppliedCount, receipt.AppliedTaskIds },
+            ct);
         if (!receipt.ReadBackVerified)
             return Result.Failure<PortfolioScheduleProposalDto>("Canonical task read-back did not match the confirmed assignment.", 500, "canonical_readback_failed");
         return Result.Success(ToDto(draft));
@@ -795,8 +810,13 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         draft.RejectedAt = DateTimeOffset.UtcNow;
         draft.RejectionReason = dto.Reason.Trim();
         draft.ConfirmationIdempotencyKey = dto.IdempotencyKey.Trim();
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync("RejectPortfolioScheduleProposal", nameof(AiGeneratedDraft), draft.Id.ToString(), new { projectId, reason = dto.Reason.Trim() }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
+            "RejectPortfolioScheduleProposal",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { projectId, reason = dto.Reason.Trim() },
+            ct);
         return Result.Success(ToDto(draft));
     }
 
@@ -828,10 +848,12 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         var memberships = await _organizationMembers.GetQueryable()
             .AsNoTracking()
             .Include(item => item.User)
-            .Where(item => item.OrganizationId == scope.OrganizationId)
+            .Where(item => item.OrganizationId == scope.OrganizationId && item.User.IsActive)
             .ToListAsync(ct);
         var people = memberships.Select(item => new CandidateUser(item.UserId, item.User.FullName, item.User.AvatarUrl))
-            .Append(new CandidateUser(organization.OwnerId, organization.Owner.FullName, organization.Owner.AvatarUrl))
+            .Concat(organization.Owner.IsActive
+                ? [new CandidateUser(organization.OwnerId, organization.Owner.FullName, organization.Owner.AvatarUrl)]
+                : [])
             .DistinctBy(item => item.UserId)
             .ToList();
         var profiles = await _profiles.GetQueryable()
@@ -1059,7 +1081,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
     private async Task<bool> CanManageOrganizationAsync(Guid organizationId, Guid userId, CancellationToken ct)
     {
         if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role)) return true;
-        var organization = await _organizations.GetQueryable().AsNoTracking().FirstOrDefaultAsync(item => item.Id == organizationId, ct);
+        var organization = await _organizations.GetQueryable().AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization?.OwnerId == userId) return true;
         var role = await _organizationMembers.GetQueryable().AsNoTracking()
             .Where(item => item.OrganizationId == organizationId && item.UserId == userId)

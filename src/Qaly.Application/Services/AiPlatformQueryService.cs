@@ -22,6 +22,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
     private readonly IOptionsMonitor<AiJobPlatformOptions> _options;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLog;
+    private readonly IProjectRoleCatalog _roleCatalog;
 
     public AiPlatformQueryService(
         IRepository<AiJob> jobs,
@@ -35,7 +36,8 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         ICurrentUserService currentUser,
         IOptionsMonitor<AiJobPlatformOptions> options,
         IUnitOfWork unitOfWork,
-        IAuditLogService auditLog)
+        IAuditLogService auditLog,
+        IProjectRoleCatalog roleCatalog)
     {
         _jobs = jobs;
         _dispatches = dispatches;
@@ -49,6 +51,7 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
         _options = options;
         _unitOfWork = unitOfWork;
         _auditLog = auditLog;
+        _roleCatalog = roleCatalog;
     }
 
     public async Task<Result<AiPlatformHealthDto>> GetHealthAsync(CancellationToken cancellationToken = default)
@@ -117,27 +120,23 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             .Select(item => new AiBudgetScopeDto("organization", item.Id, item.Id, null, item.Name))
             .ToListAsync(cancellationToken);
 
-        var manageableProjectIds = isSystemAdmin
-            ? _projects.GetQueryable().Select(item => item.Id)
-            : _projects.GetQueryable()
-                .Where(item =>
-                    item.OwnerId == userId ||
-                    item.Members.Any(member => member.UserId == userId &&
-                        (member.Role == ProjectRoleRules.Owner ||
-                         member.Role == ProjectRoleRules.Manager ||
-                         member.Role == ProjectRoleRules.ScrumMaster ||
-                         member.Role == "PM" ||
-                         member.Role == "ProjectOwner" ||
-                         member.Role == "ProjectManager" ||
-                         member.Role == "Admin")) ||
-                    (item.OrganizationId.HasValue && manageableOrganizationIds.Contains(item.OrganizationId.Value)))
-                .Select(item => item.Id);
-
-        var projects = await _projects.GetQueryable().AsNoTracking()
-            .Where(item => !item.IsDeleted && manageableProjectIds.Contains(item.Id))
+        var projectCandidates = await _projects.GetQueryable().AsNoTracking()
+            .Where(item => !item.IsDeleted &&
+                (isSystemAdmin ||
+                 item.OwnerId == userId ||
+                 item.Members.Any(member => member.UserId == userId) ||
+                 (item.OrganizationId.HasValue && manageableOrganizationIds.Contains(item.OrganizationId.Value))))
             .OrderBy(item => item.Name)
-            .Select(item => new AiBudgetScopeDto("project", item.Id, item.OrganizationId, item.Id, item.Name))
             .ToListAsync(cancellationToken);
+        var projects = new List<AiBudgetScopeDto>(projectCandidates.Count);
+        foreach (var project in projectCandidates)
+        {
+            if (isSystemAdmin || await CanManageProjectAsync(project, cancellationToken))
+            {
+                projects.Add(new AiBudgetScopeDto(
+                    "project", project.Id, project.OrganizationId, project.Id, project.Name));
+            }
+        }
 
         return Result.Success<IReadOnlyList<AiBudgetScopeDto>>([.. organizations, .. projects]);
     }
@@ -296,7 +295,21 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
 
         try
         {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLog,
+                "UpdateAiBudgetPolicy",
+                nameof(AiBudgetPolicy),
+                policy.Id.ToString(),
+                new
+                {
+                    scope.ScopeType,
+                    scope.ScopeId,
+                    scope.OrganizationId,
+                    scope.ProjectId,
+                    Previous = previous,
+                    Current = PolicyAuditSnapshot(policy)
+                },
+                cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -307,21 +320,6 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             return BudgetConflict();
         }
 
-        await _auditLog.LogAsync(
-            "UpdateAiBudgetPolicy",
-            nameof(AiBudgetPolicy),
-            policy.Id.ToString(),
-            new
-            {
-                scope.ScopeType,
-                scope.ScopeId,
-                scope.OrganizationId,
-                scope.ProjectId,
-                Previous = previous,
-                Current = PolicyAuditSnapshot(policy)
-            },
-            cancellationToken);
-
         return await BuildBudgetSnapshotAsync(scope, cancellationToken);
     }
 
@@ -329,13 +327,35 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
     {
         var userId = _currentUser.UserId!.Value;
         if (ProjectRoleRules.IsSystemAdmin(_currentUser.Role)) return _jobs.GetQueryable();
-        var memberProjects = _projectMembers.GetQueryable().Where(member => member.UserId == userId).Select(member => member.ProjectId);
-        var organizations = _organizationMembers.GetQueryable().Where(member => member.UserId == userId).Select(member => member.OrganizationId);
+        var memberProjects = _projectMembers.GetQueryable()
+            .Where(member => member.UserId == userId)
+            .Select(member => member.ProjectId);
+        var organizationMemberships = _organizationMembers.GetQueryable()
+            .Where(member => member.UserId == userId && member.Organization.IsActive);
+        var organizationIds = organizationMemberships.Select(member => member.OrganizationId);
+        var managedOrganizationIds = organizationMemberships
+            .Where(member => member.Role == OrganizationRoleRules.Owner ||
+                member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                member.Role == "Admin" ||
+                member.Role == "Manager")
+            .Select(member => member.OrganizationId);
         return _jobs.GetQueryable().Where(job =>
             job.RequestedById == userId ||
-            (job.ProjectId.HasValue && memberProjects.Contains(job.ProjectId.Value)) ||
-            (job.TenantId.HasValue && organizations.Contains(job.TenantId.Value)) ||
-            (job.Project != null && job.Project.OwnerId == userId));
+            (job.Project != null &&
+             (job.Project.OrganizationId == null
+                 ? job.Project.OwnerId == userId || memberProjects.Contains(job.Project.Id)
+                 : job.Project.Organization != null &&
+                   job.Project.Organization.IsActive &&
+                   (job.Project.Organization.OwnerId == userId ||
+                    managedOrganizationIds.Contains(job.Project.OrganizationId.Value) ||
+                    (organizationIds.Contains(job.Project.OrganizationId.Value) &&
+                     (job.Project.OwnerId == userId || memberProjects.Contains(job.Project.Id)))))) ||
+            (job.ProjectId == null && job.TenantId.HasValue &&
+             (_organizations.GetQueryable().Any(organization =>
+                  organization.Id == job.TenantId.Value &&
+                  organization.IsActive &&
+                  organization.OwnerId == userId) ||
+              managedOrganizationIds.Contains(job.TenantId.Value))));
     }
 
     private async Task<Result<ResolvedBudgetScope>> ResolveScopeAsync(
@@ -417,25 +437,29 @@ public sealed class AiPlatformQueryService : IAiPlatformQueryService
             .Select(item => new
             {
                 item.OrganizationId,
-                OrganizationIsActive = item.Organization != null && item.Organization.IsActive,
+                OrganizationIsActive = !item.OrganizationId.HasValue ||
+                    (item.Organization != null && item.Organization.IsActive),
                 OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
             })
             .FirstOrDefaultAsync(ct);
 
-        if (projectInfo?.OrganizationId == null || projectInfo.OrganizationOwnerId == null || !projectInfo.OrganizationIsActive)
+        if (projectInfo == null || !projectInfo.OrganizationIsActive)
         {
             return false;
         }
 
-        if (project.OwnerId == userId || projectInfo.OrganizationOwnerId == userId) return true;
+        if (project.OwnerId == userId) return true;
+        if (!projectInfo.OrganizationId.HasValue || !projectInfo.OrganizationOwnerId.HasValue) return false;
+        var organizationId = projectInfo.OrganizationId.GetValueOrDefault();
+        if (projectInfo.OrganizationOwnerId == userId) return true;
         var projectRole = await _projectMembers.GetQueryable()
             .Where(member => member.ProjectId == project.Id && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(projectRole)) return true;
-        if (!project.OrganizationId.HasValue) return false;
+        var resolvedProjectRole = await _roleCatalog.ResolveAsync(projectRole, project.OrganizationId, ct);
+        if (resolvedProjectRole != null && ProjectRoleRules.CanManageProject(resolvedProjectRole.BaseRole)) return true;
         var organizationRole = await _organizationMembers.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId)
+            .Where(member => member.OrganizationId == organizationId && member.UserId == userId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
         return OrganizationRoleRules.CanManageAiBudget(organizationRole);

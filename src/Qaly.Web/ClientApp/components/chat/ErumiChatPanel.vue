@@ -20,7 +20,7 @@ import {
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../../composables/dashboard-context'
 import { useErumiContext } from '../../composables/use-erumi-context'
-import { apiJson, apiResult } from '../../utils/api-client'
+import { apiFetch, apiJson, apiResult } from '../../utils/api-client'
 import { showError, showInfo, showSuccess } from '../../composables/use-toast'
 import { normalizeAssistantProjectTarget, resolveAssistantProjectId, resolveAssistantRouteEntity } from './assistant-project-context'
 import { cloneAssistantJson } from './assistant-render-normalization'
@@ -1036,6 +1036,7 @@ const activeAssistantClientTurnId = ref<string | null>(null)
 const pendingRequestedCapabilityId = ref<string | null>(null)
 const progressiveDraft = ref<AiAssistantClarificationDraft | null>(null)
 const clarificationDraftSaving = ref(false)
+const clarificationDraftSaveError = ref<string | null>(null)
 const selectedFiles = ref<File[]>([])
 const backgroundRefreshing = ref(false)
 const lastRefreshedAt = ref<Date | null>(null)
@@ -1614,6 +1615,7 @@ function queueClarificationDraftSave() {
     assistantSessionVersion.value = session.version
     const latestLocal = progressiveDraft.value
     const serverDraft = session.clarificationDraft ?? draft
+    clarificationDraftSaveError.value = null
     progressiveDraft.value = latestLocal?.originTurnId === draft.originTurnId &&
       (latestLocal.updatedAt !== sentUpdatedAt || JSON.stringify(latestLocal.answers) !== sentAnswersJson)
       ? {
@@ -1624,10 +1626,25 @@ function queueClarificationDraftSave() {
         }
       : serverDraft
   }).catch(error => {
-    showError(error instanceof Error ? error.message : 'Không thể lưu câu trả lời nháp.')
+    clarificationDraftSaveError.value = error instanceof Error
+      ? error.message
+      : 'Không thể lưu câu trả lời nháp.'
+    showError(clarificationDraftSaveError.value)
   }).finally(() => {
     clarificationDraftSaving.value = false
   })
+}
+
+async function flushClarificationDraftSave() {
+  if (clarificationInputSaveTimer != null) {
+    window.clearTimeout(clarificationInputSaveTimer)
+    clarificationInputSaveTimer = null
+    queueClarificationDraftSave()
+  }
+  await clarificationSaveChain
+  if (clarificationDraftSaveError.value) {
+    throw new Error(`Chưa thể tiếp tục vì câu trả lời chưa được lưu: ${clarificationDraftSaveError.value}`)
+  }
 }
 
 function setProgressiveAnswer(
@@ -1684,7 +1701,11 @@ function updateProgressiveFreeText(
 
 async function clearProgressiveDraft() {
   if (!assistantSessionId.value || !progressiveDraft.value) return
-  await clarificationSaveChain.catch(() => undefined)
+  if (clarificationInputSaveTimer != null) {
+    window.clearTimeout(clarificationInputSaveTimer)
+    clarificationInputSaveTimer = null
+  }
+  await clarificationSaveChain
   try {
     const session = await apiJson<AiAssistantSession>(
       `/api/ai/assistant/sessions/${assistantSessionId.value}/clarification-draft?expectedVersion=${assistantSessionVersion.value}`,
@@ -1692,6 +1713,7 @@ async function clearProgressiveDraft() {
     )
     assistantSessionVersion.value = session.version
     progressiveDraft.value = null
+    clarificationDraftSaveError.value = null
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Không thể xóa câu trả lời nháp.')
   }
@@ -1700,16 +1722,26 @@ async function clearProgressiveDraft() {
 async function submitProgressiveDraft(action: ErumiAction) {
   const draft = ensureProgressiveDraft(action)
   if (!draft || !hasAllBlockingAnswers(action)) return
-  await clarificationSaveChain.catch(() => undefined)
-  const answerSummary = draft.answers.map(answer => answer.label || answer.value).join(' · ')
+  try {
+    await flushClarificationDraftSave()
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Câu trả lời chưa được lưu trên máy chủ.')
+    return
+  }
+  const confirmedDraft = progressiveDraft.value
+  if (!confirmedDraft || confirmedDraft.originTurnId !== draft.originTurnId) {
+    showError('Bản nháp trên máy chủ đã thay đổi. Hãy kiểm tra lại câu trả lời trước khi gửi.')
+    return
+  }
+  const answerSummary = confirmedDraft.answers.map(answer => answer.label || answer.value).join(' · ')
   const completed = await submitChat(
-    draft.originalMessage,
+    confirmedDraft.originalMessage,
     undefined,
     answerSummary,
     undefined,
-    draft.requestedCapabilityId || undefined,
+    confirmedDraft.requestedCapabilityId || undefined,
     undefined,
-    draft.answers
+    confirmedDraft.answers
   )
   if (completed) await clearProgressiveDraft()
 }
@@ -2426,7 +2458,7 @@ async function parseAttachedFiles(files: File[]): Promise<ErumiUploadedFile[]> {
       formData.append('file', file)
       formData.append('firstRowIsHeader', 'true')
 
-      const res = await fetch('/api/import/parse', {
+      const res = await apiFetch('/api/import/parse', {
         method: 'POST',
         body: formData
       })
@@ -2581,10 +2613,10 @@ function getFallbackChatAnswer(prompt: string) {
     return getFallbackTeamAnswer(p)
   }
   if (p.includes('hiệu suất') || p.includes('năng suất') || p.includes('productivity') || p.includes('báo cáo')) {
-    return `### 📊 Đánh giá hiệu suất làm việc tuần qua\n\n- **Tiến độ**: Các dự án trong Workspace hoạt động đúng tiến độ đạt **75%**. Tổng số nhiệm vụ đã hoàn tất trong tuần là **8 nhiệm vụ**.\n- **Thời gian**: Toàn nhóm đã ghi nhận **32 giờ chấm công thực tế**.\n- **Nhận xét**: Năng suất duy trì ở mức ổn định. Điểm sáng là sự tập trung cao độ ở các task thuộc luồng quan trọng.`
+    return `### Đánh giá hiệu suất làm việc tuần qua\n\n- **Tiến độ**: Các dự án trong Workspace hoạt động đúng tiến độ đạt **75%**. Tổng số nhiệm vụ đã hoàn tất trong tuần là **8 nhiệm vụ**.\n- **Thời gian**: Toàn nhóm đã ghi nhận **32 giờ chấm công thực tế**.\n- **Nhận xét**: Năng suất duy trì ở mức ổn định. Điểm sáng là sự tập trung cao độ ở các task thuộc luồng quan trọng.`
   }
   if (p.includes('rủi ro') || p.includes('chậm') || p.includes('risk') || p.includes('quá hạn')) {
-    return `### ⚠️ Đánh giá rủi ro toàn Workspace\n\n- **Nhiệm vụ trễ hạn**: Phát hiện dự án đang có **1 nhiệm vụ quá hạn** cần xử lý.\n- **Dự án chịu ảnh hưởng**: Dự án DATN đang có tỉ lệ quá hạn nhẹ.\n- **Giải pháp**: Nhắc nhở người thực hiện trực tiếp hoặc phân bổ thêm thành viên hỗ trợ để tháo gỡ điểm nghẽn.`
+    return `### Đánh giá rủi ro toàn Workspace\n\n- **Nhiệm vụ trễ hạn**: Phát hiện dự án đang có **1 nhiệm vụ quá hạn** cần xử lý.\n- **Dự án chịu ảnh hưởng**: Dự án DATN đang có tỉ lệ quá hạn nhẹ.\n- **Giải pháp**: Nhắc nhở người thực hiện trực tiếp hoặc phân bổ thêm thành viên hỗ trợ để tháo gỡ điểm nghẽn.`
   }
   return `Chào bạn! Mình là Erumi. Hiện tại mô hình AI cục bộ đang ở trạng thái ngoại tuyến.\n\nTuy nhiên, bạn có thể chọn các dự án cụ thể trong menu ngữ cảnh và dùng nút **+** để mở các câu hỏi gợi ý hay công cụ phân tích để mình trích xuất báo cáo thông minh trực tiếp từ dữ liệu hệ thống nhé!`
 }
@@ -3895,14 +3927,159 @@ function nativeActionTitle(draft: AiNativeActionDraft) {
   return labels[draft.capabilityId] || 'Thay đổi do AI đề xuất'
 }
 
+function nativeActionDescription(draft: AiNativeActionDraft) {
+  const descriptions: Record<string, string> = {
+    'task.acceptance_checklist.v1': 'Mỗi dòng sẽ thành một tiêu chí nghiệm thu canonical của Task sau đúng một lần xác nhận.',
+    'task.breakdown.v1': 'Chỉnh tiêu đề, mô tả, ưu tiên, estimate, dependency và required skill trước khi tạo subtask.',
+    'wiki.brief_task.v1': 'Brief giữ link tới section nguồn; chỉ các Task được tick mới được tạo.',
+    'group.poll.create.v1': 'Kiểm tra câu hỏi, các lựa chọn, chế độ chọn nhiều và hạn bình chọn.',
+    'project.digest.configure.v1': 'Chọn ngày, giờ địa phương và múi giờ cho weekly digest của Project.',
+    'meeting.actions.review.v1': 'Mỗi action item có thể bỏ qua, map vào Task có sẵn hoặc tạo Task mới.',
+    'project.roadmap.adjust.v1': 'So sánh trước/sau và chỉ áp dụng các Sprint được tick chọn.',
+    'task.skill_evidence.confirm.v1': 'Chỉ ghi nhận người đóng góp từ Task Done, acceptance đã xác nhận và required skill thật.',
+  }
+  return descriptions[draft.capabilityId] || 'Kiểm tra dữ liệu có cấu trúc trước khi xác nhận.'
+}
+
 function nativeActionStatusLabel(draft: AiNativeActionDraft) {
   if (draft.receipt || draft.status === 'confirmed') return 'Đã tạo'
   if (draft.status === 'rejected') return 'Đã bỏ bản nháp'
   return 'Chờ xác nhận'
 }
 
+function nativeActionScopeLabel(draft: AiNativeActionDraft) {
+  const payload = draft.payload || {}
+  const value = payload.taskTitle || payload.parentTaskTitle || payload.wikiTitle || payload.groupName ||
+    payload.meetingTitle || payload.projectName
+  return String(value || '').trim()
+}
+
 function nativeActionReadOnly(draft: AiNativeActionDraft) {
   return Boolean(draft.receipt) || draft.status !== 'pending_review'
+}
+
+function nativeActionValidationIssues(draft: AiNativeActionDraft) {
+  const payload = draft.payload || {}
+  const nonEmpty = (value: unknown) => String(value ?? '').trim().length > 0
+  switch (draft.capabilityId) {
+    case 'task.acceptance_checklist.v1': {
+      const items = Array.isArray(payload.items) ? payload.items : []
+      return items.length && items.every(nonEmpty) ? [] : ['Điền đầy đủ ít nhất một tiêu chí nghiệm thu.']
+    }
+    case 'task.breakdown.v1': {
+      const subtasks = Array.isArray(payload.subtasks) ? payload.subtasks : []
+      const issues: string[] = []
+      if (!subtasks.length) issues.push('Cần ít nhất một subtask.')
+      if (subtasks.some((item: Record<string, any>) => !nonEmpty(item.title))) issues.push('Mỗi subtask cần có tiêu đề.')
+      if (subtasks.some((item: Record<string, any>) => Number(item.estimatedHours) <= 0)) issues.push('Estimate của mỗi subtask phải lớn hơn 0 giờ.')
+      if (subtasks.some((item: Record<string, any>) => !nonEmpty(item.requiredSkillId))) issues.push('Chọn required skill cho từng subtask.')
+      return issues
+    }
+    case 'wiki.brief_task.v1': {
+      const candidates = Array.isArray(payload.taskCandidates) ? payload.taskCandidates : []
+      const selected = candidates.filter((item: Record<string, any>) => item.selected)
+      if (!nonEmpty(payload.summary)) return ['Brief cần có nội dung tóm tắt.']
+      if (selected.some((item: Record<string, any>) => !nonEmpty(item.title) || !nonEmpty(item.description))) {
+        return ['Mỗi Task được tick cần đủ tiêu đề và mô tả.']
+      }
+      return []
+    }
+    case 'group.poll.create.v1': {
+      const options = Array.isArray(payload.options) ? payload.options.map((item: unknown) => String(item ?? '').trim()) : []
+      if (!nonEmpty(payload.question)) return ['Nhập câu hỏi Poll.']
+      if (options.length < 2 || options.some((item: string) => !item)) return ['Poll cần ít nhất hai lựa chọn có nội dung.']
+      if (new Set(options.map((item: string) => item.toLowerCase())).size !== options.length) return ['Các lựa chọn Poll không được trùng nhau.']
+      if (nonEmpty(payload.expiredAt) && Date.parse(payload.expiredAt) <= Date.now()) return ['Hạn bình chọn phải nằm trong tương lai.']
+      return []
+    }
+    case 'project.digest.configure.v1':
+      return Number(payload.localTimeMinutes) >= 0 && Number(payload.localTimeMinutes) < 1440 && nonEmpty(payload.timeZoneId)
+        ? [] : ['Chọn giờ gửi và múi giờ hợp lệ.']
+    case 'meeting.actions.review.v1': {
+      const actions = Array.isArray(payload.actionItems) ? payload.actionItems : []
+      if (!nonEmpty(payload.summary)) return ['Cuộc họp cần có tóm tắt nguồn.']
+      if (actions.some((item: Record<string, any>) => !nonEmpty(item.title))) return ['Mỗi action item cần có tiêu đề.']
+      if (actions.some((item: Record<string, any>) => item.mappingMode === 'existing_task' && !nonEmpty(item.existingTaskId))) return ['Chọn Task đích cho action item được map vào Task có sẵn.']
+      return []
+    }
+    case 'project.roadmap.adjust.v1': {
+      const adjustments = Array.isArray(payload.adjustments) ? payload.adjustments : []
+      if (!adjustments.some((item: Record<string, any>) => item.selected)) return ['Tick ít nhất một điều chỉnh Sprint muốn áp dụng.']
+      if (adjustments.some((item: Record<string, any>) => !nonEmpty(item.sprintName) || Date.parse(item.afterEnd) <= Date.parse(item.afterStart))) {
+        return ['Mỗi Sprint cần tên và ngày kết thúc sau ngày bắt đầu.']
+      }
+      return []
+    }
+    case 'task.skill_evidence.confirm.v1': {
+      const contributors = Array.isArray(payload.contributors) ? payload.contributors : []
+      return contributors.some((item: Record<string, any>) => item.selected) ? [] : ['Chọn ít nhất một người đóng góp đã được xác minh.']
+    }
+    default:
+      return ['Renderer chưa hỗ trợ capability này; chưa thể xác nhận an toàn.']
+  }
+}
+
+function nativeActionConfirmLabel(draft: AiNativeActionDraft) {
+  const payload = draft.payload || {}
+  switch (draft.capabilityId) {
+    case 'task.acceptance_checklist.v1': return 'Xác nhận và lưu checklist'
+    case 'task.breakdown.v1': return 'Xác nhận và tạo subtask'
+    case 'wiki.brief_task.v1': {
+      const selected = Array.isArray(payload.taskCandidates)
+        ? payload.taskCandidates.filter((item: Record<string, any>) => item.selected).length
+        : payload.createTask ? 1 : 0
+      return selected > 0 ? `Xác nhận và tạo ${selected} Task đã chọn` : 'Xác nhận brief — không tạo Task'
+    }
+    case 'group.poll.create.v1': return 'Xác nhận và tạo Poll'
+    case 'project.digest.configure.v1': return payload.isEnabled ? 'Xác nhận và lưu lịch gửi' : 'Xác nhận tắt weekly digest'
+    case 'meeting.actions.review.v1': {
+      const selected = Array.isArray(payload.actionItems)
+        ? payload.actionItems.filter((item: Record<string, any>) => item.mappingMode === 'existing_task' || item.mappingMode === 'new_task').length
+        : 0
+      return selected > 0 ? `Xác nhận và ghi ${selected} action item` : 'Xác nhận review — không tạo Task'
+    }
+    case 'project.roadmap.adjust.v1': return 'Xác nhận và áp dụng Sprint đã chọn'
+    case 'task.skill_evidence.confirm.v1': return 'Xác nhận và lưu skill evidence'
+    default: return 'Xác nhận thay đổi'
+  }
+}
+
+function digestTimeInput(minutes: unknown) {
+  const value = Math.min(1439, Math.max(0, Number(minutes) || 0))
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`
+}
+
+function changeDigestTime(payload: Record<string, any>, event: Event) {
+  const [hours, minutes] = (event.target as HTMLInputElement).value.split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return
+  payload.localTimeMinutes = hours * 60 + minutes
+}
+
+function toDateTimeLocalInput(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  if (Number.isNaN(date.getTime())) return ''
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function changeDateTimeLocal(payload: Record<string, any>, field: string, event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  if (!value) return
+  payload[field] = new Date(value).toISOString()
+}
+
+function changeRoadmapDate(adjustment: Record<string, any>, field: 'afterStart' | 'afterEnd', event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  if (!value) return
+  adjustment[field] = `${value}T00:00:00.000Z`
+}
+
+function changeNativeBreakdownSkill(draft: AiNativeActionDraft, item: Record<string, any>, event: Event) {
+  const skillId = (event.target as HTMLSelectElement).value
+  const option = (draft.payload.skillOptions || []).find((candidate: Record<string, any>) => candidate.skillId === skillId)
+  if (!option) return
+  item.requiredSkillId = option.skillId
+  item.requiredSkillName = option.name
 }
 
 function openNativeActionLink(path: string) {
@@ -3912,6 +4089,11 @@ function openNativeActionLink(path: string) {
 
 async function confirmNativeAction(entry: ChatEntry, draft: AiNativeActionDraft) {
   if (nativeActionBusy.value || draft.receipt || draft.status !== 'pending_review') return
+  const validationIssues = nativeActionValidationIssues(draft)
+  if (validationIssues.length) {
+    showError(validationIssues[0])
+    return
+  }
   nativeActionBusy.value = draft.draftId
   try {
     const receipt = await apiJson<AiNativeActionReceipt>(`/api/ai/native-actions/${draft.draftId}/confirm`, {
@@ -3940,6 +4122,11 @@ async function confirmNativeAction(entry: ChatEntry, draft: AiNativeActionDraft)
 
 async function saveNativeAction(entry: ChatEntry, draft: AiNativeActionDraft) {
   if (nativeActionBusy.value || nativeActionReadOnly(draft)) return
+  const validationIssues = nativeActionValidationIssues(draft)
+  if (validationIssues.length) {
+    showError(validationIssues[0])
+    return
+  }
   nativeActionBusy.value = draft.draftId
   try {
     entry.nativeActionDraft = await apiJson<AiNativeActionDraft>(`/api/ai/native-actions/${draft.draftId}`, {
@@ -4564,7 +4751,8 @@ onBeforeUnmount(() => {
                       <div>
                         <span>AI Native · bản nháp có cấu trúc</span>
                         <h3>{{ nativeActionTitle(msg.nativeActionDraft) }}</h3>
-                        <p>Kiểm tra và chỉnh trực tiếp. Chỉ tạo dữ liệu thật sau nút xác nhận bên dưới.</p>
+                        <p>{{ nativeActionDescription(msg.nativeActionDraft) }}</p>
+                        <small v-if="nativeActionScopeLabel(msg.nativeActionDraft)" class="native-action-scope">Đích: {{ nativeActionScopeLabel(msg.nativeActionDraft) }}</small>
                       </div>
                       <div class="project-launch-status">
                         <strong>{{ nativeActionStatusLabel(msg.nativeActionDraft) }}</strong>
@@ -4589,8 +4777,16 @@ onBeforeUnmount(() => {
                           <label>Ước lượng (giờ)<input v-model.number="item.estimatedHours" type="number" min="1" max="10000" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                         </span>
                         <label>Kỹ năng bắt buộc
-                          <input :value="item.requiredSkillName || 'Chưa có kỹ năng phù hợp trong catalog'" disabled />
-                          <small>Kỹ năng lấy từ catalog của tổ chức và sẽ được lưu cùng subtask sau xác nhận.</small>
+                          <select
+                            v-if="msg.nativeActionDraft.payload.skillOptions?.length"
+                            :value="item.requiredSkillId || ''"
+                            :disabled="nativeActionReadOnly(msg.nativeActionDraft)"
+                            @change="changeNativeBreakdownSkill(msg.nativeActionDraft, item, $event)"
+                          >
+                            <option v-for="skill in msg.nativeActionDraft.payload.skillOptions" :key="skill.skillId" :value="skill.skillId">{{ skill.name }}</option>
+                          </select>
+                          <input v-else :value="item.requiredSkillName || 'Chưa có kỹ năng phù hợp trong catalog'" disabled />
+                          <small>Chọn từ catalog của Organization; ID và tên kỹ năng được lưu cùng subtask sau xác nhận.</small>
                         </label>
                         <span v-if="Number(index) > 0" class="native-action-check"><input v-model="item.dependsOnPrevious" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Phụ thuộc subtask trước</span>
                       </label>
@@ -4619,14 +4815,18 @@ onBeforeUnmount(() => {
                       <label>Câu hỏi<input v-model="msg.nativeActionDraft.payload.question" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                       <label v-for="(_option, index) in msg.nativeActionDraft.payload.options" :key="index">Lựa chọn {{ Number(index) + 1 }}<input v-model="msg.nativeActionDraft.payload.options[index]" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                       <label class="native-action-check"><input v-model="msg.nativeActionDraft.payload.allowMultiple" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Cho phép chọn nhiều</label>
-                      <label>Hạn bình chọn<input v-model="msg.nativeActionDraft.payload.expiredAt" type="datetime-local" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <label>Hạn bình chọn<input :value="toDateTimeLocalInput(msg.nativeActionDraft.payload.expiredAt)" type="datetime-local" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" @change="changeDateTimeLocal(msg.nativeActionDraft.payload, 'expiredAt', $event)" /></label>
                     </section>
 
                     <section v-else-if="msg.nativeActionDraft.capabilityId === 'project.digest.configure.v1'" class="native-action-editor native-action-grid">
                       <label class="native-action-check"><input v-model="msg.nativeActionDraft.payload.isEnabled" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Bật gửi tổng hợp</label>
                       <label>Ngày gửi<select v-model.number="msg.nativeActionDraft.payload.dayOfWeek" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option :value="1">Thứ Hai</option><option :value="2">Thứ Ba</option><option :value="3">Thứ Tư</option><option :value="4">Thứ Năm</option><option :value="5">Thứ Sáu</option><option :value="6">Thứ Bảy</option><option :value="0">Chủ Nhật</option></select></label>
-                      <label>Giờ gửi (phút từ 00:00)<input v-model.number="msg.nativeActionDraft.payload.localTimeMinutes" type="number" min="0" max="1439" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
-                      <label>Múi giờ<input v-model="msg.nativeActionDraft.payload.timeZoneId" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
+                      <label>Giờ gửi<input :value="digestTimeInput(msg.nativeActionDraft.payload.localTimeMinutes)" type="time" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" @change="changeDigestTime(msg.nativeActionDraft.payload, $event)" /></label>
+                      <label>Múi giờ
+                        <input v-model="msg.nativeActionDraft.payload.timeZoneId" :list="`native-timezones-${msg.nativeActionDraft.draftId}`" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" placeholder="Chọn hoặc nhập IANA timezone" />
+                        <datalist :id="`native-timezones-${msg.nativeActionDraft.draftId}`"><option value="Asia/Ho_Chi_Minh">Việt Nam</option><option value="Asia/Bangkok">Bangkok</option><option value="Asia/Singapore">Singapore</option><option value="UTC">UTC</option></datalist>
+                      </label>
+                      <label>Kênh gửi<input value="Email tới địa chỉ tài khoản" disabled /></label>
                     </section>
 
                     <section v-else-if="msg.nativeActionDraft.capabilityId === 'meeting.actions.review.v1'" class="native-action-editor">
@@ -4636,6 +4836,7 @@ onBeforeUnmount(() => {
                       <article v-for="action in msg.nativeActionDraft.payload.actionItems" :key="action.itemIndex" class="native-action-subcard">
                         <label>Action item<input v-model="action.title" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                         <label>Xử lý<select v-model="action.mappingMode" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option value="none">Chưa map — không ghi</option><option value="existing_task">Map vào Task có sẵn</option><option value="new_task">Tạo bản nháp Task mới</option></select></label>
+                        <label>Ưu tiên<select v-model="action.priority" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label>
                         <label v-if="action.mappingMode === 'existing_task'">Task có sẵn<select v-model="action.existingTaskId" :disabled="nativeActionReadOnly(msg.nativeActionDraft)"><option :value="null">Chọn Task…</option><option v-for="task in msg.nativeActionDraft.payload.existingTaskOptions" :key="task.taskId" :value="task.taskId">{{ task.title }}</option></select></label>
                         <label v-if="action.mappingMode === 'new_task'">Mô tả Task<textarea v-model="action.description" rows="2" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                         <small>Nguồn transcript: {{ action.sourceEvidence || 'Đoạn nguồn đã lưu cùng extraction' }}</small>
@@ -4648,9 +4849,9 @@ onBeforeUnmount(() => {
                         <label class="native-action-check"><input v-model="adjustment.selected" type="checkbox" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /> Áp dụng điều chỉnh này</label>
                         <label>Tên Sprint<input v-model="adjustment.sprintName" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                         <div class="native-action-grid"><span><strong>Trước</strong><br />{{ adjustment.beforeStart }} → {{ adjustment.beforeEnd }}</span><span><strong>Sau</strong><br />{{ adjustment.afterStart }} → {{ adjustment.afterEnd }}</span></div>
-                        <label>Bắt đầu sau điều chỉnh<input v-model="adjustment.afterStart" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
-                        <label>Kết thúc sau điều chỉnh<input v-model="adjustment.afterEnd" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
-                        <small>{{ adjustment.reason }}</small>
+                        <label>Bắt đầu sau điều chỉnh<input type="date" :value="toDateInput(adjustment.afterStart)" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" @change="changeRoadmapDate(adjustment, 'afterStart', $event)" /></label>
+                        <label>Kết thúc sau điều chỉnh<input type="date" :value="toDateInput(adjustment.afterEnd)" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" @change="changeRoadmapDate(adjustment, 'afterEnd', $event)" /></label>
+                        <label>Lý do điều chỉnh<textarea v-model="adjustment.reason" rows="2" :disabled="nativeActionReadOnly(msg.nativeActionDraft)" /></label>
                       </article>
                     </section>
 
@@ -4670,11 +4871,23 @@ onBeforeUnmount(() => {
                         @click="openNativeActionLink(item.url)"
                       >{{ item.label }} →</button>
                     </section>
-                    <div v-else-if="msg.nativeActionDraft.status === 'pending_review'" class="native-action-controls">
+                    <section v-if="!msg.nativeActionDraft.receipt && nativeActionValidationIssues(msg.nativeActionDraft).length" class="native-action-blockers" role="alert">
+                      <strong>Chưa thể xác nhận</strong>
+                      <ul><li v-for="issue in nativeActionValidationIssues(msg.nativeActionDraft)" :key="issue">{{ issue }}</li></ul>
+                      <small>Sửa ngay trong card; nút xác nhận sẽ tự mở khi đủ điều kiện.</small>
+                    </section>
+                    <button
+                      v-if="msg.nativeActionDraft.payload.sourceRef"
+                      type="button"
+                      class="native-action-source-link"
+                      @click="openNativeActionLink(msg.nativeActionDraft.payload.sourceRef)"
+                    >Mở dữ liệu nguồn →</button>
+                    <div v-if="!msg.nativeActionDraft.receipt && msg.nativeActionDraft.status === 'pending_review'" class="native-action-controls">
                       <button
                         type="button"
                         class="secondary-button"
-                        :disabled="Boolean(nativeActionBusy)"
+                        :disabled="Boolean(nativeActionBusy) || nativeActionValidationIssues(msg.nativeActionDraft).length > 0"
+                        :title="nativeActionValidationIssues(msg.nativeActionDraft)[0] || 'Lưu bản nháp trên máy chủ'"
                         data-testid="native-action-save"
                         @click="saveNativeAction(msg, msg.nativeActionDraft)"
                       >Lưu bản nháp</button>
@@ -4688,12 +4901,13 @@ onBeforeUnmount(() => {
                       <button
                         type="button"
                         class="launch-primary-action"
-                        :disabled="Boolean(nativeActionBusy)"
+                        :disabled="Boolean(nativeActionBusy) || nativeActionValidationIssues(msg.nativeActionDraft).length > 0"
+                        :title="nativeActionValidationIssues(msg.nativeActionDraft)[0] || 'Xác nhận một lần và đọc lại dữ liệu canonical'"
                         data-testid="native-action-confirm"
                         @click="confirmNativeAction(msg, msg.nativeActionDraft)"
-                      >{{ nativeActionBusy === msg.nativeActionDraft.draftId ? 'Đang xử lý…' : 'Xác nhận và tạo dữ liệu thật' }}</button>
+                      >{{ nativeActionBusy === msg.nativeActionDraft.draftId ? 'Đang xử lý…' : nativeActionConfirmLabel(msg.nativeActionDraft) }}</button>
                     </div>
-                    <p v-else class="native-action-closed">Bản nháp đã được bỏ; không có dữ liệu domain nào được tạo.</p>
+                    <p v-else-if="!msg.nativeActionDraft.receipt && msg.nativeActionDraft.status === 'rejected'" class="native-action-closed">Bản nháp đã được bỏ; không có dữ liệu domain nào được tạo.</p>
                   </article>
 
                   <article
@@ -5521,7 +5735,13 @@ onBeforeUnmount(() => {
                         <section class="assistant-progressive-questions">
                           <header>
                             <strong>{{ pendingProgressiveQuestions(action.payload?.questions, action).length ? 'Mình cần biết thêm' : 'Đã đủ câu trả lời cần thiết' }}</strong>
-                            <span>{{ clarificationDraftSaving ? 'Đang lưu nháp…' : 'Câu trả lời được lưu trên máy chủ' }}</span>
+                            <span :class="{ 'clarification-save-error': clarificationDraftSaveError }">
+                              {{ clarificationDraftSaveError
+                                ? `Chưa lưu được: ${clarificationDraftSaveError}`
+                                : clarificationDraftSaving
+                                  ? 'Đang lưu nháp…'
+                                  : 'Câu trả lời đã được lưu trên máy chủ' }}
+                            </span>
                           </header>
                           <article
                             v-for="question in filteredProgressiveQuestions(action.payload?.questions, action)"
@@ -5580,9 +5800,10 @@ onBeforeUnmount(() => {
                             <button
                               type="button"
                               class="launch-primary-action"
-                              :disabled="!hasAllBlockingAnswers(action) || clarificationDraftSaving || isChatting"
+                              :disabled="!hasAllBlockingAnswers(action) || isChatting"
+                              :title="!hasAllBlockingAnswers(action) ? 'Trả lời đủ các câu hỏi bắt buộc trước khi gửi.' : clarificationDraftSaveError ? 'Qaly sẽ thử lưu lại bản nháp trước khi gửi.' : undefined"
                               @click="submitProgressiveDraft(action)"
-                            >Gửi tất cả câu trả lời</button>
+                            >{{ clarificationDraftSaving ? 'Lưu và gửi…' : 'Gửi tất cả câu trả lời' }}</button>
                           </footer>
                         </section>
                         <details v-if="action.payload?.guidance && !hasAllBlockingAnswers(action)" class="assistant-manual-guidance">
@@ -5670,7 +5891,7 @@ onBeforeUnmount(() => {
                     :class="`status-${msg.model.status || 'live'}`"
                   >
                     {{ msg.model.label || msg.model.id }}
-                    <em v-if="msg.model.status === 'fallback'">Fallback</em>
+                    <em v-if="msg.model.status === 'fallback' || msg.model.status === 'server_fallback'">Fallback server</em>
                   </span>
                   <span v-if="typeof msg.confidence === 'number'" class="assistant-conf" :title="msg.confidenceReason || undefined">
                     Độ tin cậy {{ Math.round(msg.confidence * 100) }}%
@@ -6380,7 +6601,8 @@ onBeforeUnmount(() => {
   color: #047857;
 }
 
-.assistant-model.status-fallback {
+.assistant-model.status-fallback,
+.assistant-model.status-server_fallback {
   color: #b45309;
 }
 
@@ -7738,7 +7960,7 @@ onBeforeUnmount(() => {
 .project-launch-rulebook { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); font-size: 12px; }
 .project-launch-rulebook button { margin-left: auto; border: 1px solid currentColor; border-radius: 8px; background: var(--surface); color: inherit; padding: 6px 9px; cursor: pointer; }
 .project-launch-rulebook button:disabled { opacity: .55; cursor: not-allowed; }
-.project-launch-rulebook.status-policy_missing { color: #b45309; background: #fffbeb; }
+.project-launch-rulebook.status-policy_missing { color: #d97706; background: color-mix(in srgb, #f59e0b 15%, var(--surface)); }
 .rulebook-review-editor, .rulebook-draft-review { flex: 1 0 100%; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .rulebook-review-editor > p { margin: 0 0 10px; color: var(--text-secondary); }
 .rulebook-review-rule { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
@@ -7849,13 +8071,14 @@ onBeforeUnmount(() => {
 .project-launch-decisions ul { display: grid; gap: 7px; list-style: none; padding: 8px 0 0; }
 .project-launch-decisions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; padding: 9px; border: 1px solid var(--border); border-radius: 9px; }
 .project-launch-decisions li p { grid-column: 1 / -1; margin: 0; color: var(--muted); }
-.project-launch-decisions .decision-block { border-color: #fecaca; }
-.project-launch-decisions .decision-unknown { border-color: #fde68a; }
+.project-launch-decisions .decision-block { border-color: color-mix(in srgb, #ef4444 35%, var(--border)); }
+.project-launch-decisions .decision-unknown { border-color: color-mix(in srgb, #f59e0b 35%, var(--border)); }
 .project-launch-brief-card > footer { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 .native-action-editor { display: grid; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); }
 .native-action-editor > label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; }
 .native-action-editor input:not([type="checkbox"]),
-.native-action-editor textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; font-weight: 400; }
+.native-action-editor textarea,
+.native-action-editor select { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; background: var(--surface); color: var(--text); font: inherit; font-weight: 400; }
 .native-action-editor textarea { resize: vertical; }
 .native-action-editor .native-action-check { display: flex; align-items: center; gap: 8px; }
 .native-action-inline-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -7865,12 +8088,18 @@ onBeforeUnmount(() => {
 .native-action-card > .launch-primary-action { display: flex; margin: 0 16px 14px auto; }
 .native-action-card > .launch-receipt { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .native-action-card > .launch-receipt h4 { flex-basis: 100%; }
+.native-action-scope { display: block; margin-top: 5px; color: var(--muted); font-weight: 650; }
 .native-action-controls { display: flex; justify-content: flex-end; gap: 8px; padding: 0 16px 14px; }
 .native-action-controls .launch-primary-action { margin: 0; }
 .native-action-controls .danger-button,
 .native-action-controls .secondary-button { border-radius: 9px; padding: 9px 13px; font-weight: 700; }
 .native-action-controls .secondary-button { border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .native-action-controls .danger-button { border: 1px solid #fecaca; background: #fff1f2; color: #b91c1c; }
+.native-action-source-link { display: flex; margin: 0 16px 12px auto; border: 0; background: transparent; color: var(--primary); font-weight: 700; cursor: pointer; }
+.native-action-blockers { margin: 0 16px 12px; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 10px; background: #fff1f2; color: #991b1b; }
+.native-action-blockers strong { display: block; margin-bottom: 5px; }
+.native-action-blockers ul { margin: 0; padding-left: 18px; }
+.native-action-blockers small { display: block; margin-top: 6px; color: #b91c1c; }
 .assignment-proposal-item { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
 .assignment-proposal-grid { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(150px, .75fr)); gap: 10px; }
 .assignment-proposal-grid label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -7887,8 +8116,8 @@ onBeforeUnmount(() => {
 .safe-test-suite-list small,
 .safe-test-suite-list span { color: var(--muted); font-size: 11px; }
 .safe-test-events { padding-top: 0; }
-.safe-test-events .status-passed { border-color: #86efac; }
-.safe-test-events .status-failed { border-color: #fca5a5; }
+.safe-test-events .status-passed { border-color: #10b981; }
+.safe-test-events .status-failed { border-color: #ef4444; }
 .safe-test-summary { margin: 0; padding: 0 16px 12px; }
 .safe-test-confirm { margin: 0 16px 14px auto; display: flex; }
 .project-launch-plan-card { border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border)); border-radius: 14px; background: var(--surface); overflow: hidden; }
@@ -7906,8 +8135,8 @@ onBeforeUnmount(() => {
 .launch-final-review-summary p { margin: 0; color: var(--muted); font-size: 11px; }
 .launch-blocking-list,
 .launch-warning-list { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 12px; }
-.launch-blocking-list { color: #b91c1c; background: #fef2f2; }
-.launch-warning-list { color: #92400e; background: #fffbeb; }
+.launch-blocking-list { color: #dc2626; background: color-mix(in srgb, #ef4444 15%, var(--surface)); }
+.launch-warning-list { color: #d97706; background: color-mix(in srgb, #f59e0b 15%, var(--surface)); }
 .launch-blocking-list ul,
 .launch-warning-list ul { margin: 5px 0 0; padding-left: 18px; }
 .launch-blocker-guides { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 7px; margin-top: 8px; }
@@ -8033,6 +8262,7 @@ onBeforeUnmount(() => {
 .assistant-progressive-actions > button { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); padding: 7px 10px; cursor: pointer; }
 .assistant-progressive-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
 .assistant-progressive-actions button:disabled { opacity: .55; cursor: not-allowed; }
+.clarification-save-error { color: var(--danger, #b91c1c); font-weight: 600; }
 .assistant-manual-guidance ol { display: grid; gap: 7px; padding: 0; list-style: none; }
 .assistant-manual-guidance li button { width: 100%; display: flex; justify-content: space-between; gap: 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 9px 10px; text-align: left; cursor: pointer; }
 .assistant-manual-guidance li small { color: var(--muted); }

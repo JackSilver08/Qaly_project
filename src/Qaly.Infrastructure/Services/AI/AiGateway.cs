@@ -204,7 +204,12 @@ public class AiGateway : IAiGateway
                     OwnerId = request.UserId.Value
                 };
 
-                var results = await _vectorStorage.SearchAsync(vector, "qaly_context", filter, limit: 3);
+                var results = await _vectorStorage.SearchAsync(
+                    vector,
+                    "qaly_context",
+                    filter,
+                    limit: 3,
+                    ct: cancellationToken);
                 if (results.Count > 0)
                 {
                     var contextBuilder = new StringBuilder();

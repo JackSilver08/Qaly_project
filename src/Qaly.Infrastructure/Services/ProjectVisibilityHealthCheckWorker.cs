@@ -46,24 +46,38 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
             {
                 await RunHealthCheckAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 WorkerFailed(_logger, ex);
             }
 
-            await Task.Delay(_checkInterval, stoppingToken);
+            try
+            {
+                await Task.Delay(_checkInterval, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
-    private async Task RunHealthCheckAsync(CancellationToken ct)
+    internal async Task RunHealthCheckAsync(CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
 
-        // Tìm danh sách UserIds có trong ProjectMember nhưng project đó bị inactive hoặc query không thấy
+        // Soft-deleted Projects intentionally retain membership so restore can reconstruct the
+        // original access graph. Only a membership with no canonical Project row is an orphan.
         var orphanedMemberUserIds = await dbContext.ProjectMembers
             .AsNoTracking()
-            .Where(m => !dbContext.Projects.Any(p => p.Id == m.ProjectId && !p.IsDeleted))
+            .Where(member => !dbContext.Projects
+                .IgnoreQueryFilters()
+                .Any(project => project.Id == member.ProjectId))
             .Select(m => m.UserId)
             .Distinct()
             .ToListAsync(ct);
@@ -72,16 +86,26 @@ public class ProjectVisibilityHealthCheckWorker : BackgroundService
         {
             OrphanedMembersFound(_logger, orphanedMemberUserIds.Count, null);
 
-            // Audit log warning
-            var auditLog = new AuditLog
+            var alertCooldownStart = DateTimeOffset.UtcNow.AddHours(-24);
+            var alreadyReported = await dbContext.AuditLogs.AsNoTracking().AnyAsync(
+                audit => audit.Action == "VisibilityHealthCheckAlert" &&
+                    audit.EntityType == "ProjectMember" &&
+                    audit.EntityId == "SystemHealthCheck" &&
+                    audit.Timestamp >= alertCooldownStart,
+                ct);
+            if (alreadyReported)
+            {
+                return;
+            }
+
+            await dbContext.AuditLogs.AddAsync(new AuditLog
             {
                 Action = "VisibilityHealthCheckAlert",
                 EntityType = "ProjectMember",
                 EntityId = "SystemHealthCheck",
                 ChangesJson = $"Detected {orphanedMemberUserIds.Count} orphaned members. UserIds: {string.Join(',', orphanedMemberUserIds.Take(10))}",
                 Timestamp = DateTimeOffset.UtcNow
-            };
-            await dbContext.AuditLogs.AddAsync(auditLog, ct);
+            }, ct);
             await dbContext.SaveChangesAsync(ct);
         }
         else

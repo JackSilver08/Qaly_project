@@ -73,7 +73,7 @@ public partial class DataSeeder
             if (!await _context.Projects.AnyAsync())
             {
                 await SeedProjectsAsync();
-                await SeedKnowledgeBaseAsync(); // ThÃªm dá»¯ liá»‡u tri thá»©c má»Ÿ rá»™ng
+                await SeedKnowledgeBaseAsync(); // Thêm dữ liệu tri thức mở rộng
                 await _context.SaveChangesAsync();
                 seededAnyData = true;
             }

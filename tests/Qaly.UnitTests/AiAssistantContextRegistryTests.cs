@@ -473,6 +473,7 @@ public sealed class AiAssistantContextRegistryTests
             new GenericRepository<SystemModulePermission>(db),
             new GenericRepository<ProjectMember>(db),
             new GenericRepository<OrganizationMember>(db),
+            new GenericRepository<Organization>(db),
             roleCatalog);
         return new AiAssistantContextRegistry(
             db,

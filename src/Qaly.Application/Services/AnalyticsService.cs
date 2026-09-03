@@ -114,15 +114,23 @@ public class AnalyticsService : IAnalyticsService
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null) return Result.Forbidden<WorkspaceAnalyticsDto>();
 
+        var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
         var allProjectIds = await _projectRepo.GetQueryable()
-            .Where(project =>
-                (project.OwnerId == currentUserId ||
-                 project.Members.Any(member => member.UserId == currentUserId)) &&
-                (project.OrganizationId == null ||
-                 (project.Organization != null &&
-                  project.Organization.IsActive &&
-                  (project.Organization.OwnerId == currentUserId ||
-                   project.Organization.Members.Any(member => member.UserId == currentUserId)))))
+            .Where(project => isSystemAdmin ||
+                (project.OrganizationId == null
+                    ? project.OwnerId == currentUserId ||
+                      project.Members.Any(member => member.UserId == currentUserId)
+                    : project.Organization != null &&
+                      project.Organization.IsActive &&
+                      (project.Organization.OwnerId == currentUserId ||
+                       project.Organization.Members.Any(member =>
+                           member.UserId == currentUserId &&
+                           (member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                            member.Role == "Admin" ||
+                            member.Role == "Manager")) ||
+                       ((project.OwnerId == currentUserId ||
+                         project.Members.Any(member => member.UserId == currentUserId)) &&
+                        project.Organization.Members.Any(member => member.UserId == currentUserId)))))
             .Select(p => p.Id)
             .ToListAsync(ct);
 

@@ -16,6 +16,8 @@ const clientTurnId = '10000000-0000-0000-0000-000000000003'
 const projectId = '10000000-0000-0000-0000-000000000004'
 const parentTaskId = '10000000-0000-0000-0000-000000000005'
 const draftId = '10000000-0000-0000-0000-000000000006'
+const backendSkillId = '10000000-0000-0000-0000-000000000009'
+const qaSkillId = '10000000-0000-0000-0000-000000000010'
 
 function nativeDraft() {
   return {
@@ -33,12 +35,18 @@ function nativeDraft() {
       parentTaskId,
       parentTaskTitle: 'Canonical parent',
       sourceRef: `/projects/${projectId}/tasks/${parentTaskId}`,
+      skillOptions: [
+        { skillId: backendSkillId, name: 'Backend / .NET APIs' },
+        { skillId: qaSkillId, name: 'QA / Test Engineering' },
+      ],
       subtasks: Array.from({ length: 10 }, (_, index) => ({
         title: `Subtask ${index + 1}`,
         description: `Canonical step ${index + 1}`,
         priority: 'Medium',
         estimatedHours: 4,
         dependsOnPrevious: index > 0,
+        requiredSkillId: backendSkillId,
+        requiredSkillName: 'Backend / .NET APIs',
       })),
     },
     sourceVersion: 'task-source-v1',
@@ -123,6 +131,8 @@ test('TEST-AI-NATIVE-DOMAIN-E2E exact ten subtasks remain editable and one confi
     expect(body.rowVersion).toBe('AQID')
     expect(body.payload.subtasks).toHaveLength(10)
     expect(body.payload.subtasks[9].title).toBe('Final verification')
+    expect(body.payload.subtasks[9].requiredSkillId).toBe(qaSkillId)
+    expect(body.payload.subtasks[9].requiredSkillName).toBe('QA / Test Engineering')
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -149,9 +159,14 @@ test('TEST-AI-NATIVE-DOMAIN-E2E exact ten subtasks remain editable and one confi
   const assistant = page.getByRole('dialog', { name: 'Trợ lý AI' })
   const card = assistant.getByTestId('native-action-draft')
   await expect(card).toBeVisible()
+  await expect(card).toContainText('Đích: Canonical parent')
   await expect(card.locator('.native-action-editor > label')).toHaveCount(10)
   await expect(assistant).toContainText('DeepSeek / deepseek-v4-pro')
-  await card.locator('.native-action-editor > label').nth(9).locator('input').first().fill('Final verification')
+  const finalSubtask = card.locator('.native-action-editor > label').nth(9)
+  await finalSubtask.locator('input').first().fill('Final verification')
+  const skillSelect = finalSubtask.getByRole('combobox').last()
+  await expect(skillSelect).toBeEditable()
+  await skillSelect.selectOption(qaSkillId)
   await card.getByTestId('native-action-confirm').click()
   await expect(card.getByTestId('native-action-receipt')).toContainText('read-back verified')
   await expect(card.getByRole('button', { name: /Final verification/ })).toBeVisible()

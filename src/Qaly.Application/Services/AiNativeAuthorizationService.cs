@@ -38,22 +38,24 @@ public interface IAiNativeAuthorizationService
 
 public sealed class AiNativeAuthorizationService : IAiNativeAuthorizationService
 {
-    private const string AiHubModule = "AiHub";
-
-    private readonly IRepository<SystemModulePermission> _systemPermissions;
+    private readonly ISystemModuleAuthorizationService _systemAuthorization;
     private readonly IRepository<ProjectMember> _projectMembers;
     private readonly IRepository<OrganizationMember> _organizationMembers;
+    private readonly IRepository<Organization> _organizations;
     private readonly IProjectRoleCatalog _roleCatalog;
 
     public AiNativeAuthorizationService(
         IRepository<SystemModulePermission> systemPermissions,
         IRepository<ProjectMember> projectMembers,
         IRepository<OrganizationMember> organizationMembers,
-        IProjectRoleCatalog roleCatalog)
+        IRepository<Organization> organizations,
+        IProjectRoleCatalog roleCatalog,
+        ISystemModuleAuthorizationService? systemAuthorization = null)
     {
-        _systemPermissions = systemPermissions;
+        _systemAuthorization = systemAuthorization ?? new SystemModuleAuthorizationService(systemPermissions);
         _projectMembers = projectMembers;
         _organizationMembers = organizationMembers;
+        _organizations = organizations;
         _roleCatalog = roleCatalog;
     }
 
@@ -62,35 +64,12 @@ public sealed class AiNativeAuthorizationService : IAiNativeAuthorizationService
         string? systemRole,
         CancellationToken ct = default)
     {
-        var permission = await _systemPermissions.GetQueryable()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(item => item.UserId == userId && item.ModuleKey == AiHubModule, ct);
-
-        if (permission == null && !string.IsNullOrWhiteSpace(systemRole))
-        {
-            permission = await _systemPermissions.GetQueryable()
-                .AsNoTracking()
-                .FirstOrDefaultAsync(item =>
-                    item.UserId == null &&
-                    item.SystemRole == systemRole &&
-                    item.ModuleKey == AiHubModule,
-                    ct);
-        }
-
-        if (permission == null)
-        {
-            return AiNativeSystemTier.Full;
-        }
-
-        if (!permission.IsAllowed ||
-            string.Equals(permission.AiTier, "Restricted", StringComparison.OrdinalIgnoreCase))
-        {
-            return AiNativeSystemTier.Restricted;
-        }
-
-        return string.Equals(permission.AiTier, "SummaryOnly", StringComparison.OrdinalIgnoreCase)
-            ? AiNativeSystemTier.SummaryOnly
-            : AiNativeSystemTier.Full;
+        var permission = await _systemAuthorization.ResolveAsync(
+            userId,
+            systemRole,
+            SystemModulePermissionRules.AiHub,
+            ct);
+        return permission.IsAllowed ? permission.AiTier : AiNativeSystemTier.Restricted;
     }
 
     public async Task<AiNativeProjectAuthorization> ResolveProjectAsync(
@@ -99,7 +78,52 @@ public sealed class AiNativeAuthorizationService : IAiNativeAuthorizationService
         bool isSystemAdmin,
         CancellationToken ct = default)
     {
-        if (isSystemAdmin || project.OwnerId == userId)
+        if (isSystemAdmin)
+        {
+            return Full();
+        }
+
+        string? organizationRole = null;
+        var isOrganizationOwner = false;
+        if (project.OrganizationId.HasValue)
+        {
+            var organization = project.Organization;
+            if (organization == null)
+            {
+                organization = await _organizations.GetQueryable()
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(item => item.Id == project.OrganizationId.Value, ct);
+            }
+
+            if (organization == null || !organization.IsActive)
+            {
+                return None();
+            }
+
+            isOrganizationOwner = organization.OwnerId == userId;
+            organizationRole = organization.Members
+                .FirstOrDefault(item => item.UserId == userId)?.Role;
+            if (organizationRole == null)
+            {
+                organizationRole = await _organizationMembers.GetQueryable()
+                    .AsNoTracking()
+                    .Where(item => item.OrganizationId == project.OrganizationId.Value && item.UserId == userId)
+                    .Select(item => item.Role)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            if (!isOrganizationOwner && string.IsNullOrWhiteSpace(organizationRole))
+            {
+                return None();
+            }
+
+            if (isOrganizationOwner || OrganizationRoleRules.CanManageOrganization(organizationRole))
+            {
+                return Full();
+            }
+        }
+
+        if (project.OwnerId == userId)
         {
             return Full();
         }
@@ -137,35 +161,9 @@ public sealed class AiNativeAuthorizationService : IAiNativeAuthorizationService
                     : AiCapabilityTier.ReadOnly);
         }
 
-        if (!project.OrganizationId.HasValue)
-        {
-            return None();
-        }
-
-        if (project.Organization?.OwnerId == userId)
-        {
-            return Full();
-        }
-
-        var organizationRole = project.Organization?.Members
-            .FirstOrDefault(item => item.UserId == userId)?.Role;
-        if (organizationRole == null)
-        {
-            organizationRole = await _organizationMembers.GetQueryable()
-                .AsNoTracking()
-                .Where(item => item.OrganizationId == project.OrganizationId.Value && item.UserId == userId)
-                .Select(item => item.Role)
-                .FirstOrDefaultAsync(ct);
-        }
-
-        if (OrganizationRoleRules.CanManageOrganization(organizationRole))
-        {
-            return Full();
-        }
-
-        return organizationRole == null
-            ? None()
-            : new AiNativeProjectAuthorization(true, false, false, AiCapabilityTier.ReadOnly);
+        // Organization membership alone does not grant access to every Project in that tenant.
+        // Ordinary tenant roles need an explicit Project membership; Owner/Admin was handled above.
+        return None();
     }
 
     private static AiNativeProjectAuthorization Full()

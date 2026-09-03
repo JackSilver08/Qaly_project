@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Interfaces;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -17,19 +18,22 @@ public class ToolParameterGuard
     private readonly IRepository<ProjectMember> _memberRepo;
     private readonly IRepository<User> _userRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public ToolParameterGuard(
         IRepository<Project> projectRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
         IRepository<User> userRepo,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _projectRepo = projectRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
         _userRepo = userRepo;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     public async Task<ToolResult> GuardAsync(string toolName, Dictionary<string, object?> parameters, CancellationToken ct = default)
@@ -72,16 +76,19 @@ public class ToolParameterGuard
 
             task = await _taskRepo.GetQueryable()
                 .AsNoTracking()
+                .Include(item => item.Project)
+                    .ThenInclude(project => project.Organization)
+                .Include(item => item.Assignees)
                 .FirstOrDefaultAsync(t => t.Id == taskId.Value, ct);
 
-            if (task == null)
+            if (task == null || !await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
             {
                 return new ToolResult
                 {
                     Success = false,
                     ErrorCode = "TASK_NOT_FOUND",
-                    UserMessage = $"Không tìm thấy công việc với ID {taskId}.",
-                    RetryHint = $"The taskId {taskId} does not exist in the database. Please verify the taskId and retry with a correct taskId."
+                    UserMessage = "Không tìm thấy công việc hoặc bạn không có quyền xem công việc này.",
+                    RetryHint = "The task is absent or not visible to the requester. Do not disclose whether it exists."
                 };
             }
 
@@ -102,12 +109,22 @@ public class ToolParameterGuard
             }
         }
 
+        if (RequiresTask(toolName) && task == null)
+        {
+            return InvalidParameterResult(
+                "taskId",
+                "Vui lòng cung cấp công việc cần thao tác.",
+                "taskId is required for this task-scoped tool.");
+        }
+
         // 3. Project Access & Role Check
         string? projectRole = null;
+        var canManageProject = false;
         if (projectId.HasValue)
         {
             var project = await _projectRepo.GetQueryable()
                 .AsNoTracking()
+                .Include(item => item.Organization)
                 .FirstOrDefaultAsync(p => p.Id == projectId.Value, ct);
 
             if (project == null)
@@ -121,8 +138,19 @@ public class ToolParameterGuard
                 };
             }
 
-            // Check if owner or system admin
-            if (isAdmin || project.OwnerId == currentUserId.Value)
+            if (!await _taskAccessPolicy.CanAccessProjectAsync(project.Id, project.OwnerId, ct))
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    ErrorCode = "FORBIDDEN",
+                    UserMessage = "Bạn không có quyền truy cập dự án này.",
+                    RetryHint = "The project is not visible to the requester. Abort the tool call without disclosing project data."
+                };
+            }
+
+            canManageProject = await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct);
+            if (isAdmin || project.OwnerId == currentUserId.Value || canManageProject)
             {
                 projectRole = ProjectRoleRules.Owner;
             }
@@ -132,18 +160,7 @@ public class ToolParameterGuard
                     .AsNoTracking()
                     .FirstOrDefaultAsync(m => m.ProjectId == projectId.Value && m.UserId == currentUserId.Value, ct);
 
-                if (member == null)
-                {
-                    return new ToolResult
-                    {
-                        Success = false,
-                        ErrorCode = "FORBIDDEN",
-                        UserMessage = "Bạn không có quyền truy cập dự án này.",
-                        RetryHint = $"The user {currentUserId.Value} is not a member of project {projectId.Value}. Access denied. Abort tool call."
-                    };
-                }
-
-                projectRole = member.Role;
+                projectRole = member?.Role;
             }
         }
         else if (RequiresProject(toolName))
@@ -157,7 +174,7 @@ public class ToolParameterGuard
             };
         }
 
-        bool isPM = projectRole != null && ProjectRoleRules.IsProjectManager(projectRole);
+        bool isPM = canManageProject;
 
         // 4. Role-based Tool Permission Verification
         var isWriteTool = IsWriteAction(toolName);
@@ -173,7 +190,9 @@ public class ToolParameterGuard
                 else if (toolName == "UpdateTaskStatus")
                 {
                     // normal member can only update task status if they are the assignee
-                    if (task == null || task.AssigneeId != currentUserId.Value)
+                    if (task == null ||
+                        (task.AssigneeId != currentUserId.Value &&
+                         !task.Assignees.Any(assignment => assignment.UserId == currentUserId.Value)))
                     {
                         return new ToolResult
                         {
@@ -335,6 +354,10 @@ public class ToolParameterGuard
             _ => false
         };
     }
+
+    private static bool RequiresTask(string toolName)
+        => toolName is "UpdateTaskStatus" or "AssignTask" or "SetTaskPriority" or
+            "AddDueDate" or "AddComment" or "StartTimeTracking";
 
     private static bool TryGetGuid(object value, out Guid guid)
     {

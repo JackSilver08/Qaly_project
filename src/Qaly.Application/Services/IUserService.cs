@@ -5,6 +5,6 @@ namespace Qaly.Application.Services;
 
 public interface IUserService
 {
-    Task<Result<IReadOnlyList<UserDto>>> GetActiveAsync(CancellationToken ct = default);
-    Task<Result<UserDto>> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<Result<IReadOnlyList<UserDirectoryDto>>> GetActiveAsync(CancellationToken ct = default);
+    Task<Result<UserDirectoryDto>> GetByIdAsync(Guid id, CancellationToken ct = default);
 }

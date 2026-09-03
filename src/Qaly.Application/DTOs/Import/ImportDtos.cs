@@ -62,6 +62,7 @@ public record ImportResult(
     int DuplicateSkippedCount,
     int NewLabelsCreated,
     List<string> UnmappedStatuses,
+    List<string> UnmappedPriorities,
     Dictionary<string, int> StatusDistribution,
     List<SkippedRowDto> SkippedRows
 );

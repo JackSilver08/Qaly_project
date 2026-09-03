@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.Common.Models;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -16,17 +17,20 @@ public class GitHubAccessGuard : IGitHubAccessGuard
     private readonly IRepository<ProjectMember> _projectMemberRepo;
     private readonly IRepository<OrganizationMember> _orgMemberRepo;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public GitHubAccessGuard(
         IRepository<Project> projectRepo,
         IRepository<ProjectMember> projectMemberRepo,
         IRepository<OrganizationMember> orgMemberRepo,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _projectRepo = projectRepo;
         _projectMemberRepo = projectMemberRepo;
         _orgMemberRepo = orgMemberRepo;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     public async Task<Result<GitHubProjectContext>> AuthorizeProjectAsync(
@@ -47,7 +51,7 @@ public class GitHubAccessGuard : IGitHubAccessGuard
                 p.Id,
                 p.OwnerId,
                 p.OrganizationId,
-                OrgOwnerId = p.Organization != null ? (Guid?)p.Organization.OwnerId : null
+                OrganizationIsActive = p.Organization != null && p.Organization.IsActive
             })
             .FirstOrDefaultAsync(ct);
 
@@ -62,43 +66,23 @@ public class GitHubAccessGuard : IGitHubAccessGuard
                 "Tích hợp GitHub yêu cầu dự án thuộc một organization.", 400);
         }
 
-        var organizationId = project.OrganizationId.Value;
-        var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
-        var isProjectOwner = project.OwnerId == userId;
-        var isOrgOwner = project.OrgOwnerId == userId;
-
-        var isProjectMember = await _projectMemberRepo.GetQueryable()
-            .AnyAsync(m => m.ProjectId == projectId && m.UserId == userId, ct);
-
-        var orgRole = await _orgMemberRepo.GetQueryable()
-            .Where(m => m.OrganizationId == organizationId && m.UserId == userId)
-            .Select(m => m.Role)
-            .FirstOrDefaultAsync(ct);
-        var isOrgMember = orgRole is not null;
-
-        var canAccess = isAdmin || isProjectOwner || isOrgOwner || isProjectMember || isOrgMember;
-        if (!canAccess)
+        if (!project.OrganizationIsActive)
         {
             return Result.Forbidden<GitHubProjectContext>();
         }
 
-        if (requireManage)
+        var organizationId = project.OrganizationId.Value;
+        if (!await _taskAccessPolicy.CanAccessProjectAsync(projectId, project.OwnerId, ct))
         {
-            var canManage = isAdmin
-                || isProjectOwner
-                || isOrgOwner
-                || IsOrgManagerRole(orgRole);
-            if (!canManage)
-            {
-                return Result.Forbidden<GitHubProjectContext>(
-                    "Chỉ quản trị viên dự án/organization mới được thay đổi kết nối GitHub.");
-            }
+            return Result.Forbidden<GitHubProjectContext>();
+        }
+
+        if (requireManage && !await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<GitHubProjectContext>(
+                "Chỉ quản trị viên dự án/organization mới được thay đổi kết nối GitHub.");
         }
 
         return Result.Success(new GitHubProjectContext(projectId, organizationId));
     }
-
-    private static bool IsOrgManagerRole(string? role)
-        => string.Equals(role, "Owner", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase);
 }

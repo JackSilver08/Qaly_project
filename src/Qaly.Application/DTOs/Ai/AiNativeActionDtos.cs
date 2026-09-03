@@ -52,11 +52,14 @@ public sealed record AiNativeBreakdownItemDto(
     Guid? RequiredSkillId = null,
     string? RequiredSkillName = null);
 
+public sealed record AiNativeBreakdownSkillOptionDto(Guid SkillId, string Name);
+
 public sealed record AiNativeBreakdownPayloadDto(
     Guid ParentTaskId,
     string ParentTaskTitle,
     IReadOnlyList<AiNativeBreakdownItemDto> Subtasks,
-    string SourceRef);
+    string SourceRef,
+    IReadOnlyList<AiNativeBreakdownSkillOptionDto>? SkillOptions = null);
 
 public sealed record AiNativeWikiPayloadDto(
     Guid WikiPageId,
@@ -93,7 +96,8 @@ public sealed record AiNativeDigestPayloadDto(
     int DayOfWeek,
     int LocalTimeMinutes,
     string TimeZoneId,
-    string SourceRef);
+    string SourceRef,
+    string DeliveryChannel = "email");
 
 public sealed record AiNativeMeetingTaskOptionDto(Guid TaskId, string Title);
 

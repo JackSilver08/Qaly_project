@@ -19,6 +19,7 @@ async function loadPermissions() {
 }
 
 beforeEach(() => {
+  window.sessionStorage.clear()
   apiResult.mockReset()
   showSuccess.mockReset()
   showError.mockReset()
@@ -43,6 +44,7 @@ describe('simulation mode', () => {
     expect(permissions.simulatedUserId.value).toBe('user-1')
     expect(permissions.simulatedUserName.value).toBe('Bảo Ngọc')
     expect(permissions.getSimulationHeaders()).toEqual({ 'X-Simulate-User-Id': 'user-1' })
+    expect(window.sessionStorage.getItem('qaly-simulated-user-id')).toBe('user-1')
     expect(showSuccess).toHaveBeenCalledWith(expect.stringContaining('Bảo Ngọc'))
   })
 
@@ -56,6 +58,7 @@ describe('simulation mode', () => {
     expect(permissions.simulatedUserId.value).toBeNull()
     expect(permissions.simulatedUserName.value).toBeNull()
     expect(permissions.getSimulationHeaders()).toEqual({})
+    expect(window.sessionStorage.getItem('qaly-simulated-user-id')).toBeNull()
     expect(showSuccess).toHaveBeenLastCalledWith('Đã thoát khỏi Simulation Mode')
   })
 
@@ -89,7 +92,8 @@ describe('loadSystemPermissions', () => {
 
     await permissions.loadSystemPermissions()
 
-    expect(apiResult).toHaveBeenCalledWith('/api/ProjectRoles/system-permissions?systemRole=')
+    expect(apiResult).toHaveBeenCalledWith('/api/ProjectRoles/effective-system-permissions')
+    expect(permissions.permissionLoadState.value).toBe('loaded')
   })
 
   it('clears the cache and warns the user when the request fails', async () => {
@@ -102,6 +106,7 @@ describe('loadSystemPermissions', () => {
     await permissions.loadSystemPermissions('Admin')
 
     expect(permissions.systemPermissions.value).toEqual([])
+    expect(permissions.permissionLoadState.value).toBe('error')
     expect(showError).toHaveBeenCalledWith('Không tải được quyền hệ thống.')
   })
 })
@@ -119,13 +124,12 @@ describe('canAccessModule', () => {
     expect(permissions.canAccessModule('Analytics')).toBe(false)
   })
 
-  it('fails open for an unlisted module — the server stays the enforcement boundary', async () => {
+  it('fails closed for an unlisted module', async () => {
     const permissions = await loadPermissions()
     apiResult.mockResolvedValueOnce([{ moduleKey: 'AiHub', isAllowed: false, aiTier: 'None' }])
     await permissions.loadSystemPermissions('Member')
 
-    // Documents QALY-UI-04: navigation is only cosmetic here, the API still authorises each call.
-    expect(permissions.canAccessModule('UnknownModule')).toBe(true)
+    expect(permissions.canAccessModule('UnknownModule')).toBe(false)
   })
 })
 
@@ -149,8 +153,12 @@ describe('getAiTier', () => {
     expect(permissions.getAiTier('Analytics')).toBe('ReadOnly')
   })
 
-  it('falls back to Full when the module is unknown', async () => {
+  it('falls back to Restricted when permissions are not loaded or the module is unknown', async () => {
     const permissions = await loadPermissions()
-    expect(permissions.getAiTier('Nowhere')).toBe('Full')
+    expect(permissions.getAiTier('Nowhere')).toBe('Restricted')
+
+    apiResult.mockResolvedValueOnce([{ moduleKey: 'AiHub', isAllowed: true, aiTier: 'Full' }])
+    await permissions.loadSystemPermissions()
+    expect(permissions.getAiTier('Nowhere')).toBe('Restricted')
   })
 })

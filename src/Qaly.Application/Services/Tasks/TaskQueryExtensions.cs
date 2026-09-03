@@ -30,5 +30,6 @@ public static class TaskQueryExtensions
                 task.Status == "Done" ? 3 :
                 task.Status == "Cancelled" ? 4 : 5)
             .ThenBy(task => task.DueDate ?? DateTimeOffset.MaxValue)
-            .ThenByDescending(task => task.CreatedAt);
+            .ThenByDescending(task => task.CreatedAt)
+            .ThenBy(task => task.Id);
 }

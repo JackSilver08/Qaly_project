@@ -11,8 +11,9 @@ import type { WikiPageDto } from '../types';
 const route = useRoute();
 const router = useRouter();
 
-const { wikiPages, updateWikiPage, formatDate } = useDashboardContext() as {
+const { wikiPages, updateWikiPage, formatDate, projectPermissions } = useDashboardContext() as {
   wikiPages: Ref<WikiPageDto[]>;
+  projectPermissions: Ref<{ canWriteWiki: boolean } | null>;
   updateWikiPage: (
     wikiId: string,
     title: string,
@@ -29,6 +30,14 @@ const currentPage = computed(() => {
   return wikiPages.value.find((p: WikiPageDto) => p.id === wikiId.value);
 });
 const showWikiSidebar = computed(() => !isEditing.value && !!currentPage.value?.content);
+const canWriteWiki = computed(() => projectPermissions.value?.canWriteWiki ?? false);
+
+function visibilityLabel(visibility?: string) {
+  if (visibility === 'public') return 'Công khai';
+  if (visibility === 'customer_safe') return 'Cho khách hàng';
+  if (visibility === 'private') return 'Riêng tư';
+  return 'Nội bộ';
+}
 
 const isEditing = ref(false);
 const editTitle = ref("");
@@ -92,10 +101,10 @@ async function saveEdit() {
               <div class="wiki-meta">
                 <span class="wiki-author">Cập nhật bởi {{ currentPage.authorName }} vào {{ formatDate(currentPage.updatedAt) }}</span>
                 <span class="wiki-badge" :class="`badge-${currentPage.visibility || 'internal'}`">
-                  {{ currentPage.visibility === 'public' ? 'Công khai' : (currentPage.visibility === 'customer_safe' ? 'Cho khách hàng' : 'Nội bộ') }}
+                  {{ visibilityLabel(currentPage.visibility) }}
                 </span>
               </div>
-              <button type="button" class="primary-button edit-btn" @click="startEdit">
+              <button v-if="canWriteWiki" type="button" class="primary-button edit-btn" @click="startEdit">
                 <Pencil :size="16" /> Sửa trang
               </button>
             </div>
@@ -128,6 +137,7 @@ async function saveEdit() {
                   <option value="public">Công khai</option>
                   <option value="customer_safe">Cho khách hàng</option>
                   <option value="internal">Nội bộ</option>
+                  <option value="private">Riêng tư — chỉ tôi và quản lý</option>
                 </select>
               </label>
               <div class="edit-actions">

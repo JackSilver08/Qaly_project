@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Mail, Shield, Trash2, UserPlus, History, AlertTriangle } from 'lucide-vue-next'
-import type { ProjectPermissionsDto, UserDto } from '../types'
+import type { ProjectPermissionsDto, UserDirectoryDto } from '../types'
 import { groupedProjectRoles, projectRoleHint, projectRoleLabel } from '../utils/project-roles'
 import { apiResult } from '../utils/api-client'
 import RoleHistoryModal from './RoleHistoryModal.vue'
@@ -37,7 +37,7 @@ interface Member {
 const props = defineProps<{
   projectId: string
   members: Member[]
-  users: UserDto[]
+  users: UserDirectoryDto[]
   isAdmin: boolean
   permissions?: ProjectPermissionsDto | null
   organizationId?: string | null

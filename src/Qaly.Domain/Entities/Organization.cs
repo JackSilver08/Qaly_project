@@ -16,5 +16,7 @@ public class Organization : BaseEntity
     public ICollection<OrganizationMember> Members { get; set; } = new List<OrganizationMember>();
     public ICollection<Project> Projects { get; set; } = new List<Project>();
     public ICollection<OrganizationSkill> Skills { get; set; } = new List<OrganizationSkill>();
+    public ICollection<ProfessionalProfileDefinition> ProfessionalProfiles { get; set; } =
+        new List<ProfessionalProfileDefinition>();
     public ICollection<WorkGroup> WorkGroups { get; set; } = new List<WorkGroup>();
 }

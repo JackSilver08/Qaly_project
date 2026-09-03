@@ -202,7 +202,14 @@ public class TasksController : BaseApiController
     [HttpDelete("{id}/dependencies/{dependencyId:guid}")]
     public async Task<IActionResult> RemoveDependency(Guid id, Guid dependencyId, CancellationToken ct)
     {
-        var result = await _taskService.RemoveDependencyAsync(dependencyId, ct);
+        var result = await _taskService.RemoveDependencyAsync(id, dependencyId, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id}/dependencies")]
+    public async Task<IActionResult> GetDependencies(Guid id, CancellationToken ct)
+    {
+        var result = await _taskService.GetDependenciesAsync(id, ct);
         return StatusCode(result.StatusCode, result);
     }
 

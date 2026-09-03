@@ -6,11 +6,12 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Qaly.Application.DTOs.User;
 using Qaly.Application.Services;
 using Qaly.Web.Auth;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Qaly.Web.Pages.Account;
 
 [AllowAnonymous]
-[IgnoreAntiforgeryToken]
+[EnableRateLimiting("account-register")]
 public class RegisterModel : PageModel
 {
     private readonly IAuthService _authService;

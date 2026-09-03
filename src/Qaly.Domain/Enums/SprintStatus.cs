@@ -4,6 +4,8 @@ public enum SprintStatus
 {
     Planning,
     Active,
+    Paused,
+    AtRisk,
     Completed,
     Cancelled
 }

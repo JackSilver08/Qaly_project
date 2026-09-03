@@ -55,7 +55,7 @@ public class AiWorkflowService : IAiWorkflowService
     private readonly IAiJobActivityService? _activityService;
     private readonly IRepository<AiUsageLedger>? _usageLedgerRepo;
     private readonly IRepository<AiJobActivityEvent>? _activityEventRepo;
-    private readonly IAiNativeAuthorizationService? _authorization;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public AiWorkflowService(
         IRepository<Project> projectRepo,
@@ -72,6 +72,7 @@ public class AiWorkflowService : IAiWorkflowService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService,
+        IAiNativeAuthorizationService authorization,
         ITaskService? taskService = null,
         ICommentService? commentService = null,
         ITimeTrackingService? timeTrackingService = null,
@@ -91,7 +92,6 @@ public class AiWorkflowService : IAiWorkflowService
         IAiJobActivityService? activityService = null,
         IRepository<AiUsageLedger>? usageLedgerRepo = null,
         IRepository<AiJobActivityEvent>? activityEventRepo = null,
-        IAiNativeAuthorizationService? authorization = null,
         IRepository<TaskDependency>? taskDependencyRepo = null)
     {
         _projectRepo = projectRepo;
@@ -1217,7 +1217,13 @@ public class AiWorkflowService : IAiWorkflowService
         }, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "EnqueueAiJob",
+                nameof(AiJob),
+                job.Id.ToString(),
+                new { job.JobType, job.ProjectId, job.SchemaId, job.RequestHash, job.IdempotencyKey, requestId },
+                ct);
         }
         catch (DbUpdateException)
         {
@@ -1238,13 +1244,6 @@ public class AiWorkflowService : IAiWorkflowService
 
             return Result.Accepted(ToCreatedDto(concurrentJob, requestId));
         }
-
-        await _auditLogService.LogAsync(
-            "EnqueueAiJob",
-            nameof(AiJob),
-            job.Id.ToString(),
-            new { job.JobType, job.ProjectId, job.SchemaId, job.RequestHash, job.IdempotencyKey, requestId },
-            ct);
 
         return Result.Accepted(ToCreatedDto(job, requestId));
     }
@@ -1300,6 +1299,7 @@ public class AiWorkflowService : IAiWorkflowService
 
         var jobs = await query
             .OrderByDescending(job => job.CreatedAt)
+            .ThenBy(job => job.Id)
             .Take(200)
             .ToListAsync(ct);
 
@@ -1506,8 +1506,13 @@ public class AiWorkflowService : IAiWorkflowService
         dispatch.LastDispatchErrorCode = null;
         dispatch.LastDispatchError = null;
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RetryAiJob", nameof(AiJob), job.Id.ToString(), new { job.AttemptCount, job.ProviderHint }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RetryAiJob",
+            nameof(AiJob),
+            job.Id.ToString(),
+            new { job.AttemptCount, job.ProviderHint },
+            ct);
         return Result.Success(ToJobDetailDto(job));
     }
 
@@ -1551,8 +1556,13 @@ public class AiWorkflowService : IAiWorkflowService
             job.Dispatch.CompletedAt = now;
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("CancelAiJob", nameof(AiJob), job.Id.ToString(), new { dto.Reason }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CancelAiJob",
+            nameof(AiJob),
+            job.Id.ToString(),
+            new { dto.Reason },
+            ct);
         return Result.Success(ToJobDetailDto(job));
     }
 
@@ -1584,7 +1594,11 @@ public class AiWorkflowService : IAiWorkflowService
             query = query.Where(draft => draft.Status == normalized);
         }
 
-        var candidates = await query.OrderByDescending(draft => draft.CreatedAt).Take(200).ToListAsync(ct);
+        var candidates = await query
+            .OrderByDescending(draft => draft.CreatedAt)
+            .ThenBy(draft => draft.Id)
+            .Take(200)
+            .ToListAsync(ct);
         var visible = new List<AiDraftSummaryDto>();
         foreach (var draft in candidates)
         {
@@ -1704,8 +1718,13 @@ public class AiWorkflowService : IAiWorkflowService
 
         draft.WorkingPayloadJson = workingPayloadJson;
         draft.PayloadJson = draft.WorkingPayloadJson;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("EditAiDraft", nameof(AiGeneratedDraft), draft.Id.ToString(), new { draft.AiJobId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "EditAiDraft",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { draft.AiJobId },
+            ct);
         return Result.Success(ToDraftDetailDto(draft));
     }
 
@@ -1762,8 +1781,13 @@ public class AiWorkflowService : IAiWorkflowService
         draft.RejectedAt = now;
         draft.RejectionReason = dto.Reason.Trim();
         draft.ConfirmationIdempotencyKey = NormalizeOptional(dto.IdempotencyKey);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RejectAiDraft", nameof(AiGeneratedDraft), draft.Id.ToString(), new { dto.Reason }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RejectAiDraft",
+            nameof(AiGeneratedDraft),
+            draft.Id.ToString(),
+            new { dto.Reason },
+            ct);
         return Result.Success(ToDraftDetailDto(draft));
     }
 
@@ -2090,7 +2114,13 @@ public class AiWorkflowService : IAiWorkflowService
             draft.ConfirmationIdempotencyKey = confirmationKey;
 
             await _aiDraftRepo.UpdateAsync(draft, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "RejectAiDraft",
+                nameof(AiGeneratedDraft),
+                draft.Id.ToString(),
+                new { draft.ProjectId, draft.ConfirmAction },
+                ct);
 
             if (_complianceService != null)
             {
@@ -2106,13 +2136,6 @@ public class AiWorkflowService : IAiWorkflowService
                     ct
                 );
             }
-
-            await _auditLogService.LogAsync(
-                "RejectAiDraft",
-                nameof(AiGeneratedDraft),
-                draft.Id.ToString(),
-                new { draft.ProjectId, draft.ConfirmAction },
-                ct);
 
             return Result.Success(new AiDraftConfirmResultDto(
                 draft.Id,
@@ -2810,7 +2833,20 @@ public class AiWorkflowService : IAiWorkflowService
         await _aiDraftRepo.UpdateAsync(draft, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "ConfirmAiDraft",
+                nameof(AiGeneratedDraft),
+                draft.Id.ToString(),
+                new
+                {
+                    draft.ProjectId,
+                    draft.ConfirmAction,
+                    createdTaskIds.Count,
+                    appliedSkillCount = taskSkillPlan?.Selections.Count ?? actionAppliedSkillCount,
+                    actionExecutionId = actionReceipt?.ExecutionId
+                },
+                ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -2868,20 +2904,6 @@ public class AiWorkflowService : IAiWorkflowService
                 ct
             );
         }
-
-        await _auditLogService.LogAsync(
-            "ConfirmAiDraft",
-            nameof(AiGeneratedDraft),
-            draft.Id.ToString(),
-            new
-            {
-                draft.ProjectId,
-                draft.ConfirmAction,
-                createdTaskIds.Count,
-                appliedSkillCount = taskSkillPlan?.Selections.Count ?? actionAppliedSkillCount,
-                actionExecutionId = actionReceipt?.ExecutionId
-            },
-            ct);
 
         return Result.Success(confirmationResult);
     }
@@ -3176,8 +3198,14 @@ public class AiWorkflowService : IAiWorkflowService
         if (job.Project != null && await CanAccessProjectAsync(job.Project, currentUserId, ct)) return true;
         if (!job.TenantId.HasValue) return false;
 
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == job.TenantId.Value && member.UserId == currentUserId, ct);
+        var organizationRole = await _organizationMemberRepo.GetQueryable()
+            .Where(member =>
+                member.OrganizationId == job.TenantId.Value &&
+                member.UserId == currentUserId &&
+                member.Organization.IsActive)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        return OrganizationRoleRules.CanManageOrganization(organizationRole);
     }
 
     private static AiJobCreatedDto ToCreatedDto(AiJob job, string? requestId)
@@ -3530,6 +3558,7 @@ public class AiWorkflowService : IAiWorkflowService
                 var existingTasks = await _taskRepo.GetQueryable()
                     .Where(task => task.ProjectId == project.Id)
                     .OrderByDescending(task => task.CreatedAt)
+                    .ThenBy(task => task.Id)
                     .Take(30)
                     .Select(task => new { task.Title, task.Status, task.Priority, task.DueDate })
                     .ToListAsync(ct);
@@ -3841,78 +3870,28 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
     {
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var isProjectMember = await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == project.Id && member.UserId == currentUserId, ct);
-        if (isProjectMember)
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
         {
             return false;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId, ct);
+        return (await _authorization.ResolveProjectAsync(project, currentUserId, IsAdmin(), ct)).CanRead;
     }
 
     private async Task<bool> CanManageProjectAsync(Project project, Guid currentUserId, CancellationToken ct)
     {
-        if (_authorization != null)
-        {
-            var systemTier = await _authorization.ResolveSystemTierAsync(
-                currentUserId,
-                _currentUserService.Role,
-                ct);
-            if (systemTier != AiNativeSystemTier.Full)
-            {
-                return false;
-            }
-
-            return (await _authorization.ResolveProjectAsync(project, currentUserId, IsAdmin(), ct)).CanManage;
-        }
-
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var projectRole = await _projectMemberRepo.GetQueryable()
-            .Where(member => member.ProjectId == project.Id && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(projectRole))
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier != AiNativeSystemTier.Full)
         {
             return false;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
+        return (await _authorization.ResolveProjectAsync(project, currentUserId, IsAdmin(), ct)).CanManage;
     }
 
     /// <summary>
@@ -3925,65 +3904,23 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
         Guid currentUserId,
         CancellationToken ct)
     {
-        if (_authorization != null)
-        {
-            var systemTier = await _authorization.ResolveSystemTierAsync(
-                currentUserId,
-                _currentUserService.Role,
-                ct);
-            if (systemTier == AiNativeSystemTier.Restricted)
-            {
-                return AiCapabilityTier.None;
-            }
-
-            var projectAuthorization = await _authorization.ResolveProjectAsync(
-                project,
-                currentUserId,
-                IsAdmin(),
-                ct);
-            return systemTier == AiNativeSystemTier.SummaryOnly &&
-                   projectAuthorization.CapabilityTier > AiCapabilityTier.ReadOnly
-                ? AiCapabilityTier.ReadOnly
-                : projectAuthorization.CapabilityTier;
-        }
-
-        if (IsAdmin() || project.OwnerId == currentUserId)
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        var projectRole = await _projectMemberRepo.GetQueryable()
-            .Where(member => member.ProjectId == project.Id && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        if (projectRole != null)
-        {
-            return AiCapabilityRules.ResolveTier(projectRole);
-        }
-
-        // Organization managers keep full reach over their organization's projects.
-        if (!project.OrganizationId.HasValue)
+        var systemTier = await _authorization.ResolveSystemTierAsync(
+            currentUserId,
+            _currentUserService.Role,
+            ct);
+        if (systemTier == AiNativeSystemTier.Restricted)
         {
             return AiCapabilityTier.None;
         }
-
-        if (project.Organization?.OwnerId == currentUserId)
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        if (OrganizationRoleRules.CanManageOrganization(organizationRole))
-        {
-            return AiCapabilityTier.Full;
-        }
-
-        return organizationRole != null ? AiCapabilityTier.ReadOnly : AiCapabilityTier.None;
+        var projectAuthorization = await _authorization.ResolveProjectAsync(
+            project,
+            currentUserId,
+            IsAdmin(),
+            ct);
+        return systemTier == AiNativeSystemTier.SummaryOnly &&
+               projectAuthorization.CapabilityTier > AiCapabilityTier.ReadOnly
+            ? AiCapabilityTier.ReadOnly
+            : projectAuthorization.CapabilityTier;
     }
 
     private async Task<Result> ValidateExecuteActionAsync(
@@ -4091,29 +4028,10 @@ Rules: create 1-8 non-duplicate tasks; use concise action titles; include accept
 
     private async Task<bool> IsProjectUserAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (project.OwnerId == userId)
-        {
-            return true;
-        }
-
-        if (await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == project.Id && member.UserId == userId, ct))
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
-        {
-            return false;
-        }
-
-        if (project.Organization?.OwnerId == userId)
-        {
-            return true;
-        }
-
-        return await _organizationMemberRepo.GetQueryable()
-            .AnyAsync(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId, ct);
+        var isSystemAdmin = await _userRepo.GetQueryable()
+            .AsNoTracking()
+            .AnyAsync(user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin, ct);
+        return (await _authorization.ResolveProjectAsync(project, userId, isSystemAdmin, ct)).CanRead;
     }
 
     private bool IsAdmin()

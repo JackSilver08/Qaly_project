@@ -32,6 +32,7 @@ async function loadClient() {
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
+  window.sessionStorage.clear()
   fetchMock = vi.fn()
   vi.stubGlobal('fetch', fetchMock)
 })
@@ -53,6 +54,16 @@ describe('apiJson', () => {
     expect(init?.credentials).toBe('same-origin')
     expect(init?.cache).toBe('no-store')
     expect(headersOf(fetchMock.mock.calls[0] as FetchArgs).has('X-CSRF-TOKEN')).toBe(false)
+  })
+
+  it('adds the persisted read-only view-as identity to API requests', async () => {
+    window.sessionStorage.setItem('qaly-simulated-user-id', 'user-42')
+    const { apiJson } = await loadClient()
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }))
+
+    await apiJson('/api/projects')
+
+    expect(headersOf(fetchMock.mock.calls[0] as FetchArgs).get('X-Simulate-User-Id')).toBe('user-42')
   })
 
   it('fetches a CSRF token before a mutating request and reuses it afterwards', async () => {

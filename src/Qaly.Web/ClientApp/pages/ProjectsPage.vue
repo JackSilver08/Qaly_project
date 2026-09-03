@@ -19,9 +19,9 @@ import PageStatePanel from '../components/PageStatePanel.vue'
 import ImportModal from '../components/import/ImportModal.vue'
 import ImportUndoBanner from '../components/import/ImportUndoBanner.vue'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
+import { apiCommand, apiFetch, apiResult, errorMessage } from '../utils/api-client'
 import { showError, showSuccess, showWarning } from '../composables/use-toast'
-import type { PagedResult, ProjectDto, UserDto } from '../types'
+import type { PagedResult, ProjectDto, UserDirectoryDto } from '../types'
 
 const {
   activeProjectCards,
@@ -83,8 +83,8 @@ const plannedProjectCount = computed(
 const archivedProjectCount = computed(
   () => projects.value.filter((p: any) => p.status === 'Archived').length,
 )
-const activeUsers = computed<UserDto[]>(() =>
-  (users.value ?? []).filter((user: UserDto) => user.isActive),
+const activeUsers = computed<UserDirectoryDto[]>(() =>
+  (users.value ?? []).filter((user: UserDirectoryDto) => user.isActive),
 )
 
 const featuredProject = computed(() => {
@@ -330,7 +330,7 @@ async function handleUndoFromBanner() {
   if (!undoBannerData.value) return
 
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/import/sessions/${undoBannerData.value.importSessionId}`,
       { method: 'DELETE' },
     )
@@ -762,7 +762,8 @@ async function handleUndoFromBanner() {
               <button
                 class="btn btn--primary"
                 type="submit"
-                :disabled="!projectName.trim() || isCreatingProject"
+                :disabled="isCreatingProject"
+                :title="isCreatingProject ? 'Đang tạo dự án và đọc lại dữ liệu đã lưu' : 'Nhập tên dự án; trình duyệt sẽ đưa bạn tới trường còn thiếu'"
               >
                 {{ isCreatingProject ? 'Đang tạo...' : 'Tạo dự án' }}
               </button>
@@ -818,7 +819,7 @@ async function handleUndoFromBanner() {
               <button class="btn btn--ghost" type="button" @click="projectBeingEditedId = null">
                 Hủy
               </button>
-              <button class="btn btn--primary" type="submit" :disabled="!editProjectName.trim()">
+              <button class="btn btn--primary" type="submit" title="Nhập tên dự án; trình duyệt sẽ đưa bạn tới trường còn thiếu">
                 Lưu thay đổi
               </button>
             </div>

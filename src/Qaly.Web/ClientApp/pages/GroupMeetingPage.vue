@@ -47,7 +47,7 @@ import {
 } from "livekit-client";
 import ScreenSharePanel from "../components/meeting/ScreenSharePanel.vue";
 import MeetingControls from "../components/meeting/MeetingControls.vue";
-import { apiResult } from "../utils/api-client";
+import { apiResult, errorMessage } from "../utils/api-client";
 import { showError, showSuccess } from "../composables/use-toast";
 import { useRoute, useRouter } from "vue-router";
 import { useSpeechRecognition } from "../composables/use-speech-recognition";
@@ -60,7 +60,10 @@ const groupId = route.params.groupId as string;
 
 const active = ref(false);
 const isStarting = ref(false);
+const endingMeeting = ref(false);
 const meetingId = ref<string | null>((route.query.meetingId as string | undefined) ?? null);
+const meetingStartedByUserId = ref<string | null>(null);
+const currentGroupRole = ref<string | null>(null);
 const joinUrl = ref<string | null>(null);
 const roomName = ref<string | null>(null);
 const liveKitUrl = ref<string | null>(null);
@@ -178,6 +181,20 @@ type LinkedProject = {
   isAccessible: boolean;
   requiresAction: boolean;
 };
+type GroupAccessDto = {
+  currentUserRole: string;
+};
+type GroupMeetingSessionDto = {
+  id: string;
+  startedByUserId: string;
+  status: string;
+  endedAt: string | null;
+  roomId: string;
+  joinUrl: string | null;
+  providerUrl?: string | null;
+  accessToken?: string | null;
+  accessTokenExpiresAt?: string | null;
+};
 const showPrivacyGate = ref(false);
 const privacyAction = ref<PrivacyAction | null>(null);
 const privacyPolicies = ref<MeetingPrivacyPolicy[]>([]);
@@ -207,11 +224,17 @@ function showRemoteCameraOff(tile: any) {
   return !tile.cameraOn || !tile.videoTrack;
 }
 
-const { saveBuffer, getBuffer, clearBuffer } = useMeetingRecovery();
+const { saveBuffer, getBuffer } = useMeetingRecovery();
 const { currentUser, projects: dashboardProjects } = useDashboardContext();
 
 const currentUserName = computed(() => {
   return currentUser.value?.fullName || currentUser.value?.email || "Thành viên";
+});
+const canEndMeeting = computed(() => {
+  const currentUserId = String(currentUser.value?.id ?? "").toLowerCase();
+  const starterId = String(meetingStartedByUserId.value ?? "").toLowerCase();
+  return Boolean(currentUserId && starterId && currentUserId === starterId)
+    || ["Owner", "Admin"].includes(currentGroupRole.value ?? "");
 });
 
 const projects = computed(() => {
@@ -726,8 +749,18 @@ async function loadLinkedMeetingProjects() {
   }
 }
 
+async function loadGroupAccess() {
+  try {
+    const group = await apiResult<GroupAccessDto>(`/api/groups/${groupId}`);
+    currentGroupRole.value = group.currentUserRole;
+  } catch (error) {
+    console.warn("Could not load meeting group access", error);
+    currentGroupRole.value = null;
+  }
+}
+
 onMounted(async () => {
-  await loadLinkedMeetingProjects();
+  await Promise.all([loadLinkedMeetingProjects(), loadGroupAccess()]);
   if (meetingId.value) {
     await joinExistingMeeting(meetingId.value);
     // Load recovery transcript from IndexedDB
@@ -857,8 +890,10 @@ async function connectRealtime() {
 
   hubConnection.on("meetingEnded", (payload: any) => {
     if (payload?.meetingId === meetingId.value) {
-      showSuccess("Cuộc họp đã kết thúc bởi chủ phòng.");
-      endMeeting();
+      if (endingMeeting.value) return;
+      void leaveMeetingLocally().then(() => {
+        showSuccess("Cuộc họp đã kết thúc bởi chủ phòng.");
+      });
     }
   });
 
@@ -890,23 +925,15 @@ async function leaveRealtimeGroups() {
   await hubConnection.invoke("LeaveGroup", groupId).catch(() => undefined);
 }
 
-async function endMeeting() {
+async function leaveMeetingLocally() {
   speechRec.stop();
-  if (meetingId.value) {
-    clearBuffer(meetingId.value);
-  }
-  const endingMeetingId = meetingId.value;
-  if (endingMeetingId) {
-    await apiResult(`/api/groups/${groupId}/meetings/${endingMeetingId}/end`, {
-      method: "POST",
-    }).catch(() => undefined);
-  }
-
   if (hubConnection && hubConnection.state === HubConnectionState.Connected) {
     try {
       await leaveRealtimeGroups();
       await hubConnection.stop();
-    } catch {}
+    } catch (error) {
+      console.warn("Could not leave realtime meeting groups cleanly", error);
+    }
     hubConnection = null;
   }
 
@@ -914,6 +941,7 @@ async function endMeeting() {
   participants.value = [];
   remoteTiles.value = [];
   meetingId.value = null;
+  meetingStartedByUserId.value = null;
   joinUrl.value = null;
   roomName.value = null;
   liveKitUrl.value = null;
@@ -924,6 +952,46 @@ async function endMeeting() {
   micMuted.value = false;
   cameraMuted.value = false;
   disconnectLiveKit();
+}
+
+
+async function leaveMeeting() {
+  await leaveMeetingLocally();
+  showSuccess("Đã rời phòng. Cuộc họp vẫn tiếp tục với những người còn lại.");
+}
+
+async function endMeeting() {
+  const endingMeetingId = meetingId.value;
+  if (!endingMeetingId || endingMeeting.value) return;
+
+  if (!canEndMeeting.value) {
+    meetingError.value = "Chỉ chủ phiên, Owner hoặc Admin của nhóm được kết thúc cuộc họp cho tất cả.";
+    showError(meetingError.value);
+    return;
+  }
+
+  endingMeeting.value = true;
+  meetingError.value = null;
+  try {
+    const receipt = await apiResult<GroupMeetingSessionDto>(
+      `/api/groups/${groupId}/meetings/${endingMeetingId}/end`,
+      { method: "POST" },
+    );
+    if (receipt.status !== "Ended" || !receipt.endedAt) {
+      throw new Error("Máy chủ chưa xác nhận trạng thái kết thúc của cuộc họp.");
+    }
+
+    await leaveMeetingLocally();
+    showSuccess("Cuộc họp đã kết thúc cho tất cả người tham gia.");
+  } catch (error) {
+    meetingError.value = errorMessage(
+      error,
+      "Không thể kết thúc cuộc họp. Phiên và transcript vẫn được giữ để bạn thử lại.",
+    );
+    showError(meetingError.value);
+  } finally {
+    endingMeeting.value = false;
+  }
 }
 
 async function copyMeetingLink() {
@@ -1015,8 +1083,9 @@ onBeforeUnmount(async () => {
   disconnectLiveKit();
 });
 
-function applyMeetingDto(dto: any, fallbackMeetingId: string | null = null) {
+function applyMeetingDto(dto: GroupMeetingSessionDto | any, fallbackMeetingId: string | null = null) {
   meetingId.value = dto?.id ?? dto?.Id ?? fallbackMeetingId;
+  meetingStartedByUserId.value = dto?.startedByUserId ?? dto?.StartedByUserId ?? null;
   joinUrl.value = dto?.joinUrl ?? dto?.JoinUrl ?? null;
   roomName.value = dto?.roomId ?? dto?.RoomId ?? `qaly-${groupId}`;
   liveKitUrl.value = dto?.providerUrl ?? dto?.ProviderUrl ?? null;
@@ -1553,11 +1622,14 @@ function disconnectLiveKit() {
         <div class="gm-dock-wrapper">
           <MeetingControls
             :active="active"
+            :can-end-meeting="canEndMeeting"
+            :ending-meeting="endingMeeting"
             :mic-muted="micMuted"
             :camera-muted="cameraMuted"
             :speech-active="isSpeechListening"
             :light="isLightTheme"
             @start="startMeeting"
+            @leave="leaveMeeting"
             @end="endMeeting"
             @share="openScreenShare"
             @toggle-mic="toggleMic"

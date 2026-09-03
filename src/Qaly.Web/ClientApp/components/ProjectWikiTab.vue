@@ -20,7 +20,8 @@ import 'md-editor-v3/lib/style.css';
 
 const props = defineProps<{
   projectName: string;
-  isAdmin: boolean;
+  canWrite: boolean;
+  canManage: boolean;
 }>();
 
 const router = useRouter();
@@ -128,6 +129,7 @@ function navigateToWiki(page: WikiPageDto) {
         <h2>{{ projectName }} Wiki</h2>
       </div>
       <button
+        v-if="canWrite"
         class="primary-button primary-button--compact"
         type="button"
         @click="toggleAddForm"
@@ -160,6 +162,7 @@ function navigateToWiki(page: WikiPageDto) {
               <option value="public">Công khai</option>
               <option value="customer_safe">Cho khách hàng</option>
               <option value="internal">Nội bộ</option>
+              <option value="private">Riêng tư — chỉ tôi và quản lý</option>
             </select>
           </label>
           <div class="wiki-editor__actions">
@@ -217,6 +220,8 @@ function navigateToWiki(page: WikiPageDto) {
                   ? "Công khai"
                   : page.visibility === "customer_safe"
                     ? "Cho khách hàng"
+                  : page.visibility === "private"
+                    ? "Riêng tư"
                     : "Nội bộ"
               }}
             </span>
@@ -226,7 +231,7 @@ function navigateToWiki(page: WikiPageDto) {
             {{ formatDate(page.updatedAt) }}</span
           >
         </div>
-        <div v-if="isAdmin" class="wiki-item__actions" @click.stop>
+        <div v-if="canWrite" class="wiki-item__actions" @click.stop>
           <button
             class="icon-button icon-button--small"
             type="button"
@@ -236,6 +241,7 @@ function navigateToWiki(page: WikiPageDto) {
             <Pencil :size="14" />
           </button>
           <button
+            v-if="canManage"
             class="icon-button icon-button--small risk"
             type="button"
             title="Xóa"
@@ -257,6 +263,7 @@ function navigateToWiki(page: WikiPageDto) {
         team.
       </p>
       <button
+        v-if="canWrite"
         class="secondary-button"
         type="button"
         style="margin-top: 16px"
@@ -264,6 +271,7 @@ function navigateToWiki(page: WikiPageDto) {
       >
         Bắt đầu viết Wiki
       </button>
+      <span v-else class="wiki-item__meta">Bạn có quyền đọc Wiki nhưng không có quyền tạo hoặc chỉnh sửa trang.</span>
     </div>
   </div>
 </template>

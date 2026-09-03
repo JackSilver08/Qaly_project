@@ -4,6 +4,7 @@ using Moq;
 using Qaly.Application.Common.Interfaces;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 using Qaly.Infrastructure.Data;
@@ -80,6 +81,59 @@ public sealed class ProjectRoleServiceAuthorizationTests : IDisposable
         result.StatusCode.Should().Be(403);
     }
 
+    [Fact]
+    public async Task SystemPermissionUpdate_RejectsAmbiguousScopeAndUnknownValues()
+    {
+        var userId = Guid.NewGuid();
+        _db.Users.Add(new User
+        {
+            Id = userId,
+            FullName = "Permission target",
+            Email = "permission-target@qaly.dev",
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+        _currentUser.SetupGet(service => service.Role).Returns(SystemRoleRules.Admin);
+
+        var service = CreateService();
+        var ambiguous = await service.UpdateSystemModulePermissionAsync(
+            "Member",
+            userId,
+            new UpdateSystemModulePermissionDto("AiHub", true, "Full"));
+        var unknownModule = await service.UpdateSystemModulePermissionAsync(
+            "Member",
+            null,
+            new UpdateSystemModulePermissionDto("ShellAccess", true, "Full"));
+        var unknownTier = await service.UpdateSystemModulePermissionAsync(
+            "Member",
+            null,
+            new UpdateSystemModulePermissionDto("AiHub", true, "Root"));
+
+        ambiguous.StatusCode.Should().Be(400);
+        unknownModule.StatusCode.Should().Be(400);
+        unknownTier.StatusCode.Should().Be(400);
+        _db.SystemModulePermissions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SystemPermissionDeny_NormalizesRoleModuleAndTier()
+    {
+        _currentUser.SetupGet(service => service.Role).Returns(SystemRoleRules.Admin);
+
+        var result = await CreateService().UpdateSystemModulePermissionAsync(
+            "user",
+            null,
+            new UpdateSystemModulePermissionDto("aihub", false, "Full"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var stored = await _db.SystemModulePermissions.SingleAsync();
+        stored.SystemRole.Should().Be(SystemRoleRules.Member);
+        stored.UserId.Should().BeNull();
+        stored.ModuleKey.Should().Be(SystemModulePermissionRules.AiHub);
+        stored.IsAllowed.Should().BeFalse();
+        stored.AiTier.Should().Be("Restricted");
+    }
+
     private ProjectRoleService CreateService()
         => new(
             new GenericRepository<ProjectCustomRole>(_db),
@@ -91,7 +145,13 @@ public sealed class ProjectRoleServiceAuthorizationTests : IDisposable
             new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_db)),
             new UnitOfWork(_db),
             _currentUser.Object,
-            _audit.Object);
+            _audit.Object,
+            new TaskAccessPolicy(
+                _currentUser.Object,
+                new GenericRepository<Project>(_db),
+                new GenericRepository<ProjectMember>(_db),
+                new GenericRepository<OrganizationMember>(_db),
+                new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_db))));
 
     public void Dispose()
     {

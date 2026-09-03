@@ -11,6 +11,7 @@ import ApiKeysTab from '../components/ApiKeysTab.vue'
 import PrivacySettingsTab from '../components/settings/PrivacySettingsTab.vue'
 import AiUsageBudgetSettingsTab from '../components/settings/AiUsageBudgetSettingsTab.vue'
 import { showSuccess, showError } from '../composables/use-toast'
+import { apiFetch } from '../utils/api-client'
 
 const { currentUser, displayRole, isLoading, loadDashboard, projects, selectedProject } = useDashboardContext()
 const route = useRoute()
@@ -94,7 +95,7 @@ async function loadOrganizations() {
   }
 
   try {
-    const res = await fetch('/api/organizations')
+    const res = await apiFetch('/api/organizations')
     if (res.ok) {
       const payload = await res.json()
       organizations.value = payload.data?.items || []
@@ -218,7 +219,7 @@ function applyAccent(color: string, theme: 'light' | 'dark') {
 async function fetchAuditLogs() {
   isLoadingLogs.value = true
   try {
-    const res = await fetch('/api/audit-logs/mine?pageSize=15')
+    const res = await apiFetch('/api/audit-logs/mine?pageSize=15')
     if (res.ok) {
       const data = await res.json()
       auditLogs.value = data.data?.items || []
@@ -238,7 +239,7 @@ async function changePassword() {
   
   isSavingPassword.value = true
   try {
-    const res = await fetch('/api/auth/change-password', {
+    const res = await apiFetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(passwordForm.value)
@@ -282,7 +283,7 @@ async function saveSettings() {
   // Call API to save name/profile changes if modified
   if (name.value.trim() && currentUser.value && name.value.trim() !== currentUser.value.fullName) {
     try {
-      const res = await fetch('/api/auth/profile', {
+      const res = await apiFetch('/api/auth/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fullName: name.value.trim(), avatarUrl: currentUser.value.avatarUrl })
@@ -305,7 +306,7 @@ async function saveSettings() {
     const org = organizations.value.find((o: any) => o.id === selectedOrgId.value)
     if (org) {
       try {
-        const res = await fetch(`/api/organizations/${selectedOrgId.value}`, {
+        const res = await apiFetch(`/api/organizations/${selectedOrgId.value}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -335,7 +336,7 @@ async function saveSettings() {
     const proj = projects.value.find((p: any) => p.id === selectedProjectId.value)
     if (proj) {
       try {
-        const res = await fetch(`/api/projects/${selectedProjectId.value}`, {
+        const res = await apiFetch(`/api/projects/${selectedProjectId.value}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

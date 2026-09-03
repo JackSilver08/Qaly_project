@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import type { DashboardResponse, UserDto } from '../types'
+import type { DashboardResponse, UserDirectoryDto, UserDto } from '../types'
 import { apiJson, apiResult } from '../utils/api-client'
 import { isTaskOverdue } from '../utils/formatters'
 import type { SummaryCardModel } from '../components/dashboard-models'
@@ -8,7 +8,7 @@ export function useDashboard() {
   const dashboard = ref<DashboardResponse>(createEmptyDashboard())
   const currentUser = ref<UserDto | null>(null)
   const currentUserLoaded = ref(false)
-  const users = ref<UserDto[]>([])
+  const users = ref<UserDirectoryDto[]>([])
   const isLoading = ref(true)
   const usingFallback = ref(true)
   const loadError = ref<string | null>(null)
@@ -97,7 +97,7 @@ export function useDashboard() {
   async function loadUsers() {
     const requestVersion = ++usersRequestVersion
     try {
-      const loadedUsers = await apiResult<UserDto[]>('/api/users')
+      const loadedUsers = await apiResult<UserDirectoryDto[]>('/api/users')
       if (requestVersion !== usersRequestVersion) return false
       users.value = Array.isArray(loadedUsers) ? loadedUsers : []
       usersLoadError.value = null

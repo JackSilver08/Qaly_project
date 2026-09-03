@@ -98,8 +98,12 @@ public sealed class EmailDigestWorkerTests
         email.Deliveries.Should().Be(1);
     }
 
-    [Fact]
-    public async Task DueDigest_AccessRevoked_DisablesScheduleWithoutSending()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task DueDigest_AccessRevokedOrUserInactive_DisablesScheduleWithoutSending(
+        bool userIsActive,
+        bool projectCanRead)
     {
         await using var db = new QalyDbContext(new DbContextOptionsBuilder<QalyDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -109,7 +113,7 @@ public sealed class EmailDigestWorkerTests
             Email = "former@qaly.test",
             PasswordHash = "not-used",
             Role = "User",
-            IsActive = true
+            IsActive = userIsActive
         };
         var project = new Project
         {
@@ -132,7 +136,9 @@ public sealed class EmailDigestWorkerTests
         var email = new FailOnceEmailService();
         var authorization = new StubAiNativeAuthorizationService
         {
-            ProjectAuthorization = new AiNativeProjectAuthorization(false, false, false, AiCapabilityTier.None)
+            ProjectAuthorization = projectCanRead
+                ? new AiNativeProjectAuthorization(true, true, true, AiCapabilityTier.Full)
+                : new AiNativeProjectAuthorization(false, false, false, AiCapabilityTier.None)
         };
         var services = new ServiceCollection()
             .AddSingleton(db)
@@ -151,6 +157,129 @@ public sealed class EmailDigestWorkerTests
         email.Attempts.Should().Be(0);
     }
 
+    [Fact]
+    public async Task DueDigest_ProviderCancellationWithoutHostShutdown_IsScheduledForRetry()
+    {
+        await using var db = new QalyDbContext(new DbContextOptionsBuilder<QalyDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var user = new User
+        {
+            FullName = "Digest timeout owner",
+            Email = "digest-timeout@qaly.test",
+            PasswordHash = "not-used",
+            Role = "User",
+            IsActive = true
+        };
+        var project = new Project
+        {
+            Name = "Digest timeout project",
+            Code = "DIGEST-TIMEOUT",
+            OwnerId = user.Id,
+            Status = "Active"
+        };
+        var subscription = new ProjectDigestSubscription
+        {
+            UserId = user.Id,
+            ProjectId = project.Id,
+            IsEnabled = true,
+            NextDeliveryAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastDeliveryStatus = "scheduled"
+        };
+        db.AddRange(user, project, subscription);
+        await db.SaveChangesAsync();
+        var email = new ProviderCancellationEmailService();
+        var services = new ServiceCollection()
+            .AddSingleton(db)
+            .AddSingleton<IEmailService>(email)
+            .AddSingleton<IAiNativeAuthorizationService>(new StubAiNativeAuthorizationService())
+            .BuildServiceProvider();
+        var worker = new EmailDigestWorker(
+            NullLogger<EmailDigestWorker>.Instance,
+            services.GetRequiredService<IServiceScopeFactory>());
+
+        await worker.SendDigestsAsync(CancellationToken.None);
+
+        subscription.LastDeliveryStatus.Should().Be("retry");
+        subscription.ConsecutiveFailureCount.Should().Be(1);
+        subscription.LastError.Should().Contain("provider timeout");
+        subscription.NextDeliveryAt.Should().BeAfter(DateTimeOffset.UtcNow);
+        email.Attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DueDigest_ProjectManager_DoesNotReceiveUnrelatedPrivateTask()
+    {
+        await using var db = new QalyDbContext(new DbContextOptionsBuilder<QalyDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var manager = new User
+        {
+            FullName = "Project manager",
+            Email = "manager@qaly.test",
+            PasswordHash = "not-used",
+            Role = "User",
+            IsActive = true
+        };
+        var project = new Project
+        {
+            Name = "Private digest boundary",
+            Code = "DIGEST-PRIVATE",
+            OwnerId = Guid.NewGuid(),
+            Status = "Active"
+        };
+        var subscription = new ProjectDigestSubscription
+        {
+            UserId = manager.Id,
+            ProjectId = project.Id,
+            IsEnabled = true,
+            NextDeliveryAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            LastDeliveryStatus = "scheduled"
+        };
+        var publicTask = new TaskItem
+        {
+            ProjectId = project.Id,
+            ReporterId = project.OwnerId,
+            Title = "Visible public task",
+            Status = "Todo"
+        };
+        var unrelatedPrivateTask = new TaskItem
+        {
+            ProjectId = project.Id,
+            ReporterId = project.OwnerId,
+            Title = "Secret private task",
+            Status = "Todo",
+            IsPrivate = true
+        };
+        var assignedPrivateTask = new TaskItem
+        {
+            ProjectId = project.Id,
+            ReporterId = project.OwnerId,
+            AssigneeId = manager.Id,
+            Title = "Assigned private task",
+            Status = "Todo",
+            IsPrivate = true
+        };
+        db.AddRange(manager, project, subscription, publicTask, unrelatedPrivateTask, assignedPrivateTask);
+        await db.SaveChangesAsync();
+
+        var email = new CapturingEmailService();
+        var authorization = new StubAiNativeAuthorizationService();
+        var services = new ServiceCollection()
+            .AddSingleton(db)
+            .AddSingleton<IEmailService>(email)
+            .AddSingleton<IAiNativeAuthorizationService>(authorization)
+            .BuildServiceProvider();
+        var worker = new EmailDigestWorker(
+            NullLogger<EmailDigestWorker>.Instance,
+            services.GetRequiredService<IServiceScopeFactory>());
+
+        await worker.SendDigestsAsync(CancellationToken.None);
+
+        email.Bodies.Should().ContainSingle();
+        email.Bodies[0].Should().Contain("Visible public task");
+        email.Bodies[0].Should().Contain("Assigned private task");
+        email.Bodies[0].Should().NotContain("Secret private task");
+    }
+
     private sealed class FailOnceEmailService : IEmailService
     {
         public int Attempts { get; private set; }
@@ -164,6 +293,40 @@ public sealed class EmailDigestWorkerTests
             if (Attempts == 1) throw new InvalidOperationException("simulated provider timeout");
             Deliveries++;
             return Task.CompletedTask;
+        }
+
+        public Task SendTaskAssignmentNotificationAsync(string recipientEmail, string taskTitle, string projectName)
+            => Task.CompletedTask;
+
+        public Task SendDueDateReminderAsync(string recipientEmail, string taskTitle, DateTimeOffset dueDate)
+            => Task.CompletedTask;
+    }
+
+    private sealed class CapturingEmailService : IEmailService
+    {
+        public List<string> Bodies { get; } = [];
+
+        public Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
+        {
+            Bodies.Add(htmlBody);
+            return Task.CompletedTask;
+        }
+
+        public Task SendTaskAssignmentNotificationAsync(string recipientEmail, string taskTitle, string projectName)
+            => Task.CompletedTask;
+
+        public Task SendDueDateReminderAsync(string recipientEmail, string taskTitle, DateTimeOffset dueDate)
+            => Task.CompletedTask;
+    }
+
+    private sealed class ProviderCancellationEmailService : IEmailService
+    {
+        public int Attempts { get; private set; }
+
+        public Task SendAsync(string to, string subject, string htmlBody, CancellationToken ct = default)
+        {
+            Attempts++;
+            throw new TaskCanceledException("provider timeout");
         }
 
         public Task SendTaskAssignmentNotificationAsync(string recipientEmail, string taskTitle, string projectName)

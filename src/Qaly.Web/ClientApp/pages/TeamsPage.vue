@@ -52,7 +52,7 @@ import type {
 import { useDashboardContext } from "../composables/dashboard-context";
 import { showError, showSuccess } from "../composables/use-toast";
 import { confirmDialog } from "../composables/use-confirm-dialog";
-import type { PagedResult, UserDto } from "../types";
+import type { PagedResult, UserDirectoryDto } from "../types";
 import { apiCommand, apiResult, errorMessage } from "../utils/api-client";
 
 interface GroupDto {
@@ -137,7 +137,7 @@ const { currentUser, loadDashboard, selectProject, openChatWithPrompt } = useDas
 const groups = ref<ChatGroupModel[]>([]);
 const groupDetails = ref<Record<string, GroupDto>>({});
 const members = ref<GroupMemberDto[]>([]);
-const users = ref<UserDto[]>([]);
+const users = ref<UserDirectoryDto[]>([]);
 const invitations = ref<GroupInvitationDto[]>([]);
 const messages = ref<TeamChatMessage[]>([]);
 const activeGroupId = ref("");
@@ -354,7 +354,7 @@ async function loadGroupDetail(groupId: string) {
 
 async function loadUsers() {
   try {
-    users.value = await apiResult<UserDto[]>("/api/users");
+    users.value = await apiResult<UserDirectoryDto[]>("/api/users");
   } catch (error) {
     showError(errorMessage(error, "Không thể tải danh sách tài khoản."));
   }
@@ -498,6 +498,10 @@ async function connectRealtime() {
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
   });
   hubConnection.on("meetingEnded", async (payload: { groupId?: string }) => {
+    const groupId = payload?.groupId;
+    if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
+  });
+  hubConnection.on("groupPollCreated", async (payload: { groupId?: string }) => {
     const groupId = payload?.groupId;
     if (groupId && groupId === activeGroupId.value) await loadMessages(groupId);
   });
@@ -773,9 +777,8 @@ async function createPanelPoll() {
   }
 
   isCreatingPoll.value = true;
-  let createdPollId = "";
   try {
-    const poll = await apiResult<any>(`/api/groups/${activeGroupId.value}/polls`, {
+    await apiResult<unknown>(`/api/groups/${activeGroupId.value}/polls`, {
       method: "POST",
       body: JSON.stringify({
         question,
@@ -783,32 +786,10 @@ async function createPanelPoll() {
         allowMultiple: pollForm.value.allowMultiple,
       }),
     });
-    createdPollId = poll.id ?? poll.Id;
-
-    const sent = await sendMessage({
-      text: "",
-      attachments: [],
-      poll: {
-        id: createdPollId,
-        question,
-        options,
-      },
-    });
-    if (!sent) {
-      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
-        method: "DELETE",
-      }).catch(() => undefined);
-      return;
-    }
-
+    await loadMessages(activeGroupId.value);
     pollForm.value = { question: "", options: ["", ""], allowMultiple: false };
     showSuccess("Đã tạo bình chọn trong nhóm");
   } catch (error) {
-    if (createdPollId) {
-      await apiCommand(`/api/groups/${activeGroupId.value}/polls/${createdPollId}`, {
-        method: "DELETE",
-      }).catch(() => undefined);
-    }
     showError(errorMessage(error, "Không thể tạo bình chọn."));
   } finally {
     isCreatingPoll.value = false;
@@ -1202,7 +1183,7 @@ function updateAddUserSearch(value: string) {
   showAddUserSuggestions.value = true;
 }
 
-function selectAddUser(user: UserDto) {
+function selectAddUser(user: UserDirectoryDto) {
   addUserId.value = user.id;
   addUserSearch.value = user.email;
   showAddUserSuggestions.value = false;

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -105,9 +106,12 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
                 }
                 else
                 {
+                    options.ConfigureWarnings(warnings => warnings.Throw(
+                        RelationalEventId.MultipleCollectionIncludeWarning));
                     options.UseSqlServer(_sqlServerConnectionString, sql =>
                     {
                         sql.MigrationsAssembly(typeof(QalyDbContext).Assembly.FullName);
+                        sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
                         sql.EnableRetryOnFailure(
                             maxRetryCount: 5,
                             maxRetryDelay: TimeSpan.FromSeconds(5),
@@ -121,6 +125,10 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             services.AddSingleton(new Mock<IAiService>().Object);
             services.RemoveAll<IAiGateway>();
             services.AddSingleton<IAiGateway>(new IntegrationAiGateway());
+            services.RemoveAll<IErumiChatService>();
+            services.AddScoped<ErumiChatService>();
+            services.AddScoped<IErumiChatService>(provider =>
+                new IntegrationDelayedErumiChatService(provider.GetRequiredService<ErumiChatService>()));
 
             // Test Auth
             services.AddAuthentication(options =>
@@ -130,6 +138,46 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
             })
             .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", options => { });
         });
+    }
+
+    /// <summary>
+    /// Provides one deterministic in-flight window for the durable cancel/resume
+    /// contract. The delay is applied after the AssistantTurn row has been written,
+    /// unlike a provider-level delay that may occur during pre-turn goal planning.
+    /// </summary>
+    private sealed class IntegrationDelayedErumiChatService(IErumiChatService inner) : IErumiChatService
+    {
+        public Task<Result<ErumiChatResponseDto>> ChatFastAsync(
+            ErumiChatRequestDto request,
+            CancellationToken ct = default)
+            => inner.ChatFastAsync(request, ct);
+
+        public async Task<Result<AiAssistantTurnResponseDto>> AssistantTurnAsync(
+            AiAssistantTurnRequestDto request,
+            AiAssistantExecutionContextDto executionContext,
+            CancellationToken ct = default)
+        {
+            await DelayFirstExecutionAsync(request, ct);
+            return await inner.AssistantTurnAsync(request, executionContext, ct);
+        }
+
+        public async Task<Result<AiAssistantTurnResponseDto>> AssistantPlannedTurnAsync(
+            AiAssistantTurnRequestDto request,
+            AiAssistantExecutionContextDto executionContext,
+            AiAssistantGoalPlanningResultDto planning,
+            CancellationToken ct = default)
+        {
+            await DelayFirstExecutionAsync(request, ct);
+            return await inner.AssistantPlannedTurnAsync(request, executionContext, planning, ct);
+        }
+
+        private static Task DelayFirstExecutionAsync(
+            AiAssistantTurnRequestDto request,
+            CancellationToken ct)
+            => !request.ResumeFromTurnId.HasValue &&
+                request.Message.Contains("FORCE_LOOP_DELAY", StringComparison.OrdinalIgnoreCase)
+                ? Task.Delay(TimeSpan.FromSeconds(5), ct)
+                : Task.CompletedTask;
     }
 
     private sealed class IntegrationAiGateway : IAiGateway
@@ -570,9 +618,6 @@ public class IntegrationTestFactory : WebApplicationFactory<Program>
 
         private static async Task<AiResponse> DelayedTextAnswerAsync(CancellationToken cancellationToken)
         {
-            // Keep the provider in flight long enough for the independent cancel
-            // request to be observed even when the full integration suite is
-            // running other web factories/SQL migrations in parallel.
             await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             return new AiResponse
             {

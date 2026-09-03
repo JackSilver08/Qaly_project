@@ -175,7 +175,11 @@ public class RcSafetyRegressionTests : IClassFixture<IntegrationTestFactory>
         using var ownerClient = _factory.CreateClient();
         ownerClient.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
         ownerClient.DefaultRequestHeaders.Add("X-Test-Role", "Member");
-        var revoke = await ownerClient.DeleteAsync($"/api/organizations/{organizationId}/members/{memberId}");
+        var csrf = (await ownerClient.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
+        using var revokeRequest = new HttpRequestMessage(HttpMethod.Delete,
+            $"/api/organizations/{organizationId}/members/{memberId}");
+        revokeRequest.Headers.Add("X-CSRF-TOKEN", csrf);
+        var revoke = await ownerClient.SendAsync(revokeRequest);
         revoke.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var memberClient = _factory.CreateClient();
@@ -193,6 +197,8 @@ public class RcSafetyRegressionTests : IClassFixture<IntegrationTestFactory>
 
         responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.Forbidden);
     }
+
+    private sealed record CsrfResponse(string Token);
 
     [Fact]
     public async Task InactiveUser_CannotAccessProtectedEndpoints()

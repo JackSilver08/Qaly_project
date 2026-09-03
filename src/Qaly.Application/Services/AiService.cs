@@ -351,7 +351,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
     {
         if (!await CanAccessProjectAsync(projectId))
         {
-            return Result.Forbidden<TaskAssignmentInsightDto>("Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p dá»± Ã¡n nÃ y.");
+            return Result.Forbidden<TaskAssignmentInsightDto>("Bạn không có quyền truy cập dự án này.");
         }
 
         var task = await _taskRepo.GetQueryable()
@@ -365,7 +365,7 @@ Trả lời theo định dạng: [Priority] - [Lý do]";
 
         if (task == null)
         {
-            return Result.NotFound<TaskAssignmentInsightDto>("KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c.");
+            return Result.NotFound<TaskAssignmentInsightDto>("Không tìm thấy công việc.");
         }
 
         var members = await _memberRepo.GetQueryable()
@@ -800,9 +800,22 @@ Tin nhắn: {userMessage}";
             return null;
         }
 
-        return await _projectRepo.GetQueryable()
-            .Include(p => p.Tasks)
+        var project = await _projectRepo.GetQueryable()
+            .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId);
+        if (project == null)
+        {
+            return null;
+        }
+
+        project.Tasks = await _taskAccessPolicy
+            .ApplyVisibilityFilter(_taskRepo.GetQueryable())
+            .AsNoTracking()
+            .Where(task => task.ProjectId == projectId)
+            .OrderBy(task => task.SortOrder)
+            .ThenBy(task => task.CreatedAt)
+            .ToListAsync();
+        return project;
     }
 
     public async Task<string> GenerateAnalyticsInsightsAsync(Guid projectId, string analyticsData)
@@ -991,6 +1004,7 @@ Chỉ xuất ra đúng mảng JSON, tuyệt đối không giải thích.";
                 .AsNoTracking()
                 .Where(t => t.ProjectId == projectId.Value && !t.IsDeleted)
                 .OrderByDescending(t => t.CreatedAt)
+                .ThenBy(t => t.Id)
                 .Take(15)
                 .Select(t => new { t.Title, t.Status, t.Priority })
                 .ToListAsync(ct);

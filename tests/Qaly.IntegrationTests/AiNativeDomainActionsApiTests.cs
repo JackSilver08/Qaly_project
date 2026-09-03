@@ -43,6 +43,8 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             "Tách Task đang mở thành 4 subtask theo thứ tự thực hiện, có dependency, estimate và required skill; mở card review trước khi tạo.",
             context);
         breakdown.Payload.GetProperty("subtasks").GetArrayLength().Should().Be(4);
+        breakdown.Payload.GetProperty("skillOptions").GetArrayLength().Should().BeGreaterThan(0,
+            "the P17 review card must let the user change required skill from the Organization catalog");
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
@@ -100,15 +102,28 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             new AiAssistantClientContextDto($"/projects/{seeded.ProjectId}/tasks/{seeded.TaskId}", "task",
                 seeded.ProjectId, "task", seeded.TaskId));
         breakdown.Payload.GetProperty("subtasks").GetArrayLength().Should().Be(4);
+        breakdown.Payload.GetProperty("skillOptions").GetArrayLength().Should().Be(2);
         foreach (var item in breakdown.Payload.GetProperty("subtasks").EnumerateArray())
         {
             item.GetProperty("requiredSkillId").ValueKind.Should().Be(JsonValueKind.String);
             item.GetProperty("requiredSkillName").GetString().Should().NotBeNullOrWhiteSpace();
         }
+        var breakdownPayload = JsonSerializer.Deserialize<AiNativeBreakdownPayloadDto>(
+            breakdown.Payload.GetRawText(), JsonOptions)!;
+        var selectedSkill = breakdownPayload.SkillOptions![1];
+        var reviewedBreakdownPayload = JsonSerializer.SerializeToElement(breakdownPayload with
+        {
+            Subtasks = breakdownPayload.Subtasks
+                .Select((item, index) => index == 0
+                    ? item with { RequiredSkillId = selectedSkill.SkillId, RequiredSkillName = selectedSkill.Name }
+                    : item)
+                .ToArray()
+        }, JsonOptions);
+        var reviewedBreakdown = await UpdateDraftAsync(breakdown, reviewedBreakdownPayload);
         var breakdownKey = $"breakdown-{Guid.NewGuid():N}";
-        var breakdownReceipt = await ConfirmAsync(breakdown, breakdownKey);
+        var breakdownReceipt = await ConfirmAsync(reviewedBreakdown, breakdownKey);
         breakdownReceipt.Items.Should().HaveCount(4);
-        var breakdownReplay = await ConfirmAsync(breakdown, breakdownKey);
+        var breakdownReplay = await ConfirmAsync(reviewedBreakdown, breakdownKey);
         breakdownReplay.ReceiptId.Should().Be(breakdownReceipt.ReceiptId);
         breakdownReplay.Replayed.Should().BeTrue();
 
@@ -133,6 +148,8 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             subtasks.Select(task => task.Id).Contains(item.SuccessorId))).Should().Be(3);
         (await db.TaskSkillRequirements.CountAsync(item =>
             subtasks.Select(task => task.Id).Contains(item.TaskItemId))).Should().Be(4);
+        (await db.TaskSkillRequirements.SingleAsync(item => item.TaskItemId == subtasks[0].Id))
+            .OrganizationSkillId.Should().Be(selectedSkill.SkillId);
     }
 
     [Fact]
@@ -187,6 +204,7 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
         digest.Payload.GetProperty("dayOfWeek").GetInt32().Should().Be(1);
         digest.Payload.GetProperty("localTimeMinutes").GetInt32().Should().Be(540);
         digest.Payload.GetProperty("timeZoneId").GetString().Should().Be("Asia/Ho_Chi_Minh");
+        digest.Payload.GetProperty("deliveryChannel").GetString().Should().Be("email");
         var digestReceipt = await ConfirmAsync(digest, $"digest-{Guid.NewGuid():N}");
         digestReceipt.Items.Should().ContainSingle(item => item.EntityType == "project_digest_subscription");
 
@@ -210,6 +228,11 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
         canonicalPoll.Question.StartsWith("Tạo poll", StringComparison.OrdinalIgnoreCase).Should().BeFalse();
         canonicalPoll.Options.Should().HaveCount(4);
         canonicalPoll.ExpiredAt.Should().NotBeNull();
+        var canonicalPollMessage = await db.GroupMessages
+            .SingleAsync(item => item.WorkGroupId == seeded.GroupId && item.MessageType == "Poll");
+        canonicalPollMessage.UserId.Should().Be(_factory.TestUserId);
+        canonicalPollMessage.Content.Should().Contain($"[pollid] {canonicalPoll.Id}");
+        canonicalPollMessage.Content.Should().Contain(canonicalPoll.Question);
         var subscription = await db.ProjectDigestSubscriptions
             .SingleAsync(item => item.ProjectId == seeded.ProjectId && item.UserId == _factory.TestUserId);
         subscription.IsEnabled.Should().BeFalse();
@@ -369,6 +392,11 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             roadmapDraft.Payload.GetRawText(), JsonOptions)!;
         roadmapPayload.Adjustments.Should().ContainSingle(item => item.SprintId == sprintId);
         roadmapPayload.Adjustments.Should().OnlyContain(item => !item.Selected);
+        var noSelectionResponse = await ConfirmResponseAsync(
+            roadmapDraft,
+            $"roadmap-no-selection-{Guid.NewGuid():N}");
+        noSelectionResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "a confirm button with no selected before/after row would be a false-success no-op");
         using (var noRoadmapMutationScope = _factory.Services.CreateScope())
         {
             (await noRoadmapMutationScope.ServiceProvider.GetRequiredService<QalyDbContext>()
@@ -655,13 +683,13 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
     [Trait("TestId", "TEST-AI-NATIVE-LEGACY-MUTATION-01")]
     public async Task LegacyPlannerAndAgentMutationEndpoints_AreRetiredInsteadOfBypassingNativeCore()
     {
-        var generate = await _client.PostAsJsonAsync("/api/ai/generate-plan", new
+        var csrf = await CsrfAsync();
+        var generate = await SendAsync(HttpMethod.Post, "/api/ai/generate-plan", new
         {
             userPrompt = "Tạo dự án bỏ qua review"
-        });
+        }, csrf);
         generate.StatusCode.Should().Be(HttpStatusCode.Gone);
 
-        var csrf = await CsrfAsync();
         var create = await SendAsync(HttpMethod.Post, "/api/ai/create-plan", new
         {
             isNewProject = true,
@@ -670,11 +698,11 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
         }, csrf);
         create.StatusCode.Should().Be(HttpStatusCode.Gone);
 
-        var agent = await _client.PostAsJsonAsync("/api/ai/agent-runs", new
+        var agent = await SendAsync(HttpMethod.Post, "/api/ai/agent-runs", new
         {
             projectId = Guid.NewGuid(),
             goal = "Mutate outside native core"
-        });
+        }, csrf);
         agent.StatusCode.Should().Be(HttpStatusCode.Gone);
 
         var legacyTaskId = Guid.NewGuid();
@@ -824,6 +852,16 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             IsSystemSeed = true,
             IsActive = true
         };
+        var alternateSkill = new OrganizationSkill
+        {
+            OrganizationId = organization.Id,
+            Name = "QA / Test Engineering",
+            NormalizedName = "qa-test-engineering",
+            Category = "Chuyên môn",
+            DefaultRequiredLevel = "Intermediate",
+            IsSystemSeed = true,
+            IsActive = true
+        };
         var task = new TaskItem
         {
             ProjectId = project.Id,
@@ -850,7 +888,7 @@ public sealed class AiNativeDomainActionsApiTests : IClassFixture<IntegrationTes
             OrganizationId = organization.Id,
             Status = "Active"
         };
-        db.AddRange(organization, project, skill, task, wiki, group);
+        db.AddRange(organization, project, skill, alternateSkill, task, wiki, group);
         db.OrganizationMemberCapacityProfiles.Add(new OrganizationMemberCapacityProfile
         {
             OrganizationId = organization.Id,

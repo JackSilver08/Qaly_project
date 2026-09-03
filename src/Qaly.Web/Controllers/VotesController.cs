@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Qaly.Application.DTOs.Vote;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Auth;
@@ -14,10 +15,12 @@ namespace Qaly.Web.Controllers;
 public class VotesController : BaseApiController
 {
     private readonly QalyDbContext _context;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
-    public VotesController(QalyDbContext context)
+    public VotesController(QalyDbContext context, ITaskAccessPolicy taskAccessPolicy)
     {
         _context = context;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     [HttpPost("{targetType}/{targetId:guid}")]
@@ -77,45 +80,23 @@ public class VotesController : BaseApiController
 
     private async Task<bool> CanAccessTargetAsync(string targetType, Guid targetId, Guid userId, CancellationToken ct)
     {
-        if (User.IsInRole("Admin"))
-        {
-            return true;
-        }
-
         TaskItem? task = targetType == "Task"
-            ? await _context.TaskItems.Include(item => item.Project).FirstOrDefaultAsync(item => item.Id == targetId, ct)
+            ? await _context.TaskItems
+                .Include(item => item.Project).ThenInclude(project => project.Organization)
+                .Include(item => item.Assignees)
+                .FirstOrDefaultAsync(item => item.Id == targetId, ct)
             : await _context.TaskComments
                 .Include(comment => comment.TaskItem)
-                .ThenInclude(item => item.Project)
+                    .ThenInclude(item => item.Project)
+                        .ThenInclude(project => project.Organization)
+                .Include(comment => comment.TaskItem)
+                    .ThenInclude(item => item.Assignees)
                 .Where(comment => comment.Id == targetId)
                 .Select(comment => comment.TaskItem)
                 .FirstOrDefaultAsync(ct);
 
-        if (task == null)
-        {
-            return false;
-        }
-
-        var isProjectMember = task.Project.OwnerId == userId ||
-            await _context.ProjectMembers.AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == userId, ct);
-        if (!isProjectMember)
-        {
-            return false;
-        }
-
-        if (!task.IsPrivate)
-        {
-            return true;
-        }
-
-        var isManager = task.Project.OwnerId == userId ||
-            await _context.ProjectMembers.AnyAsync(member =>
-                member.ProjectId == task.ProjectId &&
-                member.UserId == userId &&
-                (member.Role == "Owner" || member.Role == "Manager" || member.Role == "Admin"),
-                ct);
-
-        return isManager || task.ReporterId == userId || task.AssigneeId == userId;
+        return task != null && _taskAccessPolicy.CurrentUserId == userId &&
+            await _taskAccessPolicy.CanContributeToTaskAsync(task, ct);
     }
 
     private async Task<VoteSummaryDto> RefreshCountsAsync(string targetType, Guid targetId, Guid userId, CancellationToken ct)

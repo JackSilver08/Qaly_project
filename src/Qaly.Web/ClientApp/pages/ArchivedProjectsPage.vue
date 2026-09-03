@@ -6,8 +6,9 @@ import {
   ArrowUpRight, Info, Check, Scissors, AlertTriangle, Save
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
-import { showSuccess, showError } from '../composables/use-toast'
+import { showSuccess, showError, showWarning } from '../composables/use-toast'
 import { confirmDialog } from '../composables/use-confirm-dialog'
+import { apiFetch } from '../utils/api-client'
 
 const {
   restoreProject: baseRestoreProject,
@@ -87,7 +88,7 @@ function savePolicies() {
 async function loadArchivedProjects() {
   isLoadingArchived.value = true
   try {
-    const res = await fetch(`/api/projects/archived?page=${currentPage.value}&pageSize=${pageSize}&search=${encodeURIComponent(searchQ.value)}`)
+    const res = await apiFetch(`/api/projects/archived?page=${currentPage.value}&pageSize=${pageSize}&search=${encodeURIComponent(searchQ.value)}`)
     if (res.ok) {
       const payload = await res.json()
       if (payload.isSuccess && payload.data) {
@@ -107,7 +108,7 @@ async function loadArchivedProjects() {
 async function loadStorageStats() {
   isLoadingStats.value = true
   try {
-    const res = await fetch('/api/storage/stats')
+    const res = await apiFetch('/api/storage/stats')
     if (res.ok) {
       const payload = await res.json()
       if (payload.isSuccess && payload.data) {
@@ -179,7 +180,7 @@ function exportProjectData(project: any) {
 async function loadTrash() {
   isLoadingTrash.value = true
   try {
-    const res = await fetch('/api/projects/trash?page=1&pageSize=100')
+    const res = await apiFetch('/api/projects/trash?page=1&pageSize=100')
     if (res.ok) {
       const payload = await res.json()
       trashProjects.value = (payload.data?.items || []).map((p: any) => {
@@ -210,13 +211,16 @@ async function loadTrash() {
 async function loadDuplicates() {
   isLoadingDuplicates.value = true
   try {
-    const res = await fetch('/api/storage/duplicates')
+    const res = await apiFetch('/api/storage/duplicates')
+    const payload = await res.json().catch(() => null)
     if (res.ok) {
-      const payload = await res.json()
       duplicatesList.value = payload.data || []
+    } else {
+      duplicatesList.value = []
+      showError(payload?.error || 'Không thể kiểm tra đầy đủ tệp trùng lặp trong storage.')
     }
   } catch (e) {
-    console.warn("Lỗi tải danh sách tệp trùng lặp:", e)
+    showError('Lỗi kết nối khi kiểm tra tệp trùng lặp.')
   } finally {
     isLoadingDuplicates.value = false
   }
@@ -227,22 +231,25 @@ async function runDeduplicator() {
   isDeduplicating.value = true
   
   try {
-    const res = await fetch('/api/storage/deduplicate', {
+    const res = await apiFetch('/api/storage/deduplicate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
-    
+    const payload = await res.json().catch(() => null)
+
     if (res.ok) {
-      const payload = await res.json()
       const result = payload.data
       const savedMB = result ? (result.bytesSaved / (1024 * 1024)).toFixed(1) : '0'
       duplicateSavedSpace.value += result ? (result.bytesSaved / (1024 * 1024)) : 0
-      duplicatesList.value = []
       showSuccess(`Đã dọn dẹp ${savedMB} MB bằng cách gộp liên kết tệp trùng lặp theo content hash.`)
+      if ((result?.scanFailures || 0) > 0 || (result?.cleanupFailures || 0) > 0) {
+        showWarning((result?.warnings || []).join(' ') || 'Một phần storage cần được đối soát lại.')
+      }
+      await loadDuplicates()
       await loadDashboard()
       await loadStorageStats()
     } else {
-      showError('Không thể thực hiện tối ưu hóa dung lượng.')
+      showError(payload?.error || 'Không thể thực hiện tối ưu hóa dung lượng.')
     }
   } catch (e) {
     showError('Lỗi kết nối khi tối ưu hóa dung lượng.')
@@ -269,7 +276,7 @@ async function restoreTrashProject(id: string) {
   if (!p) return
   
   try {
-    const res = await fetch(`/api/projects/${id}/restore`, {
+    const res = await apiFetch(`/api/projects/${id}/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
@@ -292,7 +299,7 @@ async function deleteTrashProject(id: string) {
   if (!p || !await confirmDialog({ tone:'critical', title:'Xóa vĩnh viễn dự án?', subject:p.name, message:'Toàn bộ dữ liệu dự án sẽ bị xóa và không thể khôi phục.', confirmLabel:'Xóa vĩnh viễn', requireText:p.name })) return
   
   try {
-    const res = await fetch(`/api/projects/${id}/hard`, {
+    const res = await apiFetch(`/api/projects/${id}/hard`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
     })

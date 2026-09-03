@@ -32,29 +32,76 @@ public partial class WebhookPublisher : IWebhookPublisher
 
     public async Task PublishAsync(Guid projectId, string eventType, object payload, CancellationToken ct = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var webhookRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookSubscription>>();
+        var webhooks = await GetMatchingWebhooksAsync(projectId, eventType, ct);
+        var dispatches = webhooks
+            .Select(webhook => DispatchToWebhookSafeAsync(webhook.Id, eventType, payload, ct));
 
-        var webhooks = await webhookRepo.GetQueryable()
-            .Where(w => w.ProjectId == projectId && w.IsActive)
-            .ToListAsync(ct);
-
-        foreach (var webhook in webhooks)
-        {
-            var events = DeserializeEvents(webhook.Events);
-            if (events.Contains(eventType) || events.Contains("*"))
-            {
-                // Dispatch in background with a NEW scope to avoid using the request scope
-                _ = Task.Run(async () => await DispatchToWebhookSafeAsync(webhook.Id, eventType, payload), CancellationToken.None);
-            }
-        }
+        // The caller receives a result only after each delivery has reached a canonical log state.
+        // This avoids process-loss windows from detached Task.Run work while each dispatch still
+        // owns a fresh DI scope.
+        await Task.WhenAll(dispatches);
     }
 
-    private async Task DispatchToWebhookSafeAsync(Guid webhookId, string eventType, object payload)
+    public async Task<WebhookPublishReceipt> PublishOutboxAsync(
+        Guid outboxMessageId,
+        Guid projectId,
+        string eventType,
+        object payload,
+        CancellationToken ct = default)
+    {
+        var webhooks = await GetMatchingWebhooksAsync(projectId, eventType, ct);
+        if (webhooks.Count == 0)
+        {
+            return new WebhookPublishReceipt(outboxMessageId, 0, 0, []);
+        }
+
+        var occurrenceKey = $"outbox:{outboxMessageId:N}";
+        var receipts = await Task.WhenAll(webhooks.Select(webhook =>
+            DispatchToWebhookAsync(webhook.Id, eventType, payload, occurrenceKey, ct)));
+        var failedStatuses = receipts
+            .Where(receipt => !receipt.IsDelivered)
+            .Select(receipt => $"{receipt.WebhookId:N}:{receipt.Status}")
+            .ToArray();
+
+        return new WebhookPublishReceipt(
+            outboxMessageId,
+            receipts.Length,
+            receipts.Count(receipt => receipt.IsDelivered),
+            failedStatuses);
+    }
+
+    private async Task<List<WebhookSubscription>> GetMatchingWebhooksAsync(
+        Guid projectId,
+        string eventType,
+        CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var webhookRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookSubscription>>();
+        var webhooks = await webhookRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(webhook => webhook.ProjectId == projectId && webhook.IsActive)
+            .OrderBy(webhook => webhook.CreatedAt)
+            .ThenBy(webhook => webhook.Id)
+            .ToListAsync(ct);
+
+        return webhooks
+            .Where(webhook =>
+            {
+                var events = DeserializeEvents(webhook.Events);
+                return events.Contains(eventType) || events.Contains("*");
+            })
+            .ToList();
+    }
+
+    private async Task DispatchToWebhookSafeAsync(
+        Guid webhookId,
+        string eventType,
+        object payload,
+        CancellationToken ct)
     {
         try
         {
-            await DispatchToWebhookAsync(webhookId, eventType, payload);
+            await DispatchToWebhookAsync(webhookId, eventType, payload, ct);
         }
         catch (Exception ex)
         {
@@ -62,7 +109,19 @@ public partial class WebhookPublisher : IWebhookPublisher
         }
     }
 
-    public async Task DispatchToWebhookAsync(Guid webhookId, string eventType, object payload, CancellationToken ct = default)
+    public async Task<WebhookDispatchReceipt> DispatchToWebhookAsync(
+        Guid webhookId,
+        string eventType,
+        object payload,
+        CancellationToken ct = default)
+        => await DispatchToWebhookAsync(webhookId, eventType, payload, null, ct);
+
+    private async Task<WebhookDispatchReceipt> DispatchToWebhookAsync(
+        Guid webhookId,
+        string eventType,
+        object payload,
+        string? occurrenceKey,
+        CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var webhookRepo = scope.ServiceProvider.GetRequiredService<IRepository<WebhookSubscription>>();
@@ -70,21 +129,43 @@ public partial class WebhookPublisher : IWebhookPublisher
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
         var webhook = await webhookRepo.GetByIdAsync(webhookId, ct);
-        if (webhook == null) return;
+        if (webhook == null)
+        {
+            return new WebhookDispatchReceipt(
+                webhookId,
+                eventType,
+                string.Empty,
+                "not_found",
+                false,
+                0,
+                null,
+                null);
+        }
 
         var dataJson = JsonSerializer.Serialize(payload);
-        var idempotencyKey = BuildIdempotencyKey(webhook.Id, eventType, dataJson);
+        var idempotencyKey = BuildIdempotencyKey(webhook.Id, eventType, dataJson, occurrenceKey);
         var alreadyDelivered = await logRepo.GetQueryable()
             .AsNoTracking()
-            .AnyAsync(log =>
+            .Where(log =>
                 log.WebhookId == webhook.Id &&
                 log.IdempotencyKey == idempotencyKey &&
-                log.IsSuccess, ct);
+                log.IsSuccess)
+            .OrderByDescending(log => log.CreatedAt)
+            .ThenBy(log => log.Id)
+            .FirstOrDefaultAsync(ct);
 
-        if (alreadyDelivered)
+        if (alreadyDelivered != null)
         {
             LogSkippedDuplicateWebhook(_logger, eventType, webhook.Id, idempotencyKey);
-            return;
+            return new WebhookDispatchReceipt(
+                webhook.Id,
+                eventType,
+                idempotencyKey,
+                "already_delivered",
+                true,
+                alreadyDelivered.AttemptCount,
+                alreadyDelivered.ResponseStatusCode,
+                alreadyDelivered.Id);
         }
 
         var payloadJson = JsonSerializer.Serialize(new
@@ -177,6 +258,16 @@ public partial class WebhookPublisher : IWebhookPublisher
 
         await logRepo.AddAsync(log, ct);
         await unitOfWork.SaveChangesAsync(ct);
+
+        return new WebhookDispatchReceipt(
+            webhook.Id,
+            eventType,
+            idempotencyKey,
+            isSuccess ? "delivered" : endpointValidation.IsAllowed ? "delivery_failed" : "endpoint_blocked",
+            isSuccess,
+            log.AttemptCount,
+            responseStatusCode,
+            log.Id);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Failed to dispatch webhook {WebhookId}")]
@@ -232,9 +323,13 @@ public partial class WebhookPublisher : IWebhookPublisher
            statusCode == HttpStatusCode.TooManyRequests ||
            (int)statusCode >= 500;
 
-    private static string BuildIdempotencyKey(Guid webhookId, string eventType, string dataJson)
+    private static string BuildIdempotencyKey(
+        Guid webhookId,
+        string eventType,
+        string dataJson,
+        string? occurrenceKey = null)
     {
-        var seed = $"{webhookId}|{eventType}|{dataJson}";
+        var seed = $"{webhookId}|{eventType}|{occurrenceKey ?? dataJson}";
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
         return $"webhook:{hash}";
     }

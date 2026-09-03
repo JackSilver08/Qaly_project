@@ -14,6 +14,7 @@ public class OrganizationService : IOrganizationService
     private readonly IRepository<OrganizationMember> _organizationMemberRepo;
     private readonly IRepository<User> _userRepo;
     private readonly IRepository<ModeratorAssignment> _moderatorAssignmentRepo;
+    private readonly IRepository<ProfessionalProfileDefinition> _professionalProfileDefinitions;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -23,6 +24,7 @@ public class OrganizationService : IOrganizationService
         IRepository<OrganizationMember> organizationMemberRepo,
         IRepository<User> userRepo,
         IRepository<ModeratorAssignment> moderatorAssignmentRepo,
+        IRepository<ProfessionalProfileDefinition> professionalProfileDefinitions,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService)
@@ -31,6 +33,7 @@ public class OrganizationService : IOrganizationService
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
         _moderatorAssignmentRepo = moderatorAssignmentRepo;
+        _professionalProfileDefinitions = professionalProfileDefinitions;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -98,6 +101,7 @@ public class OrganizationService : IOrganizationService
         var totalCount = await query.CountAsync(ct);
         var items = await query
             .OrderByDescending(item => item.CreatedAt)
+            .ThenBy(item => item.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -152,16 +156,22 @@ public class OrganizationService : IOrganizationService
         };
 
         await _organizationRepo.AddAsync(organization, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
+        await _professionalProfileDefinitions.AddRangeAsync(
+            ProfessionalProfileCatalog.CreateBaseline(organization.Id),
+            ct);
         await _organizationMemberRepo.AddAsync(new OrganizationMember
         {
             OrganizationId = organization.Id,
             UserId = ownerId,
             Role = OrganizationRoleRules.Owner
         }, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(Organization), organization.Id.ToString(), new { organization.Name, organization.Code }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(Organization),
+            organization.Id.ToString(),
+            new { organization.Name, organization.Code },
+            ct);
 
         return await GetByIdAsync(organization.Id, ct);
     }
@@ -235,8 +245,13 @@ public class OrganizationService : IOrganizationService
         }
 
         await _organizationRepo.UpdateAsync(organization, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Update", nameof(Organization), organization.Id.ToString(), dto, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Update",
+            nameof(Organization),
+            organization.Id.ToString(),
+            dto,
+            ct);
 
         return await GetByIdAsync(id, ct);
     }
@@ -256,8 +271,13 @@ public class OrganizationService : IOrganizationService
 
         organization.IsActive = false;
         await _organizationRepo.UpdateAsync(organization, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Deactivate", nameof(Organization), organization.Id.ToString(), new { organization.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Deactivate",
+            nameof(Organization),
+            organization.Id.ToString(),
+            new { organization.Name },
+            ct);
 
         return Result.Success();
     }
@@ -346,8 +366,13 @@ public class OrganizationService : IOrganizationService
                 UserId = userId,
                 Role = normalizedRole
             }, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("AddMember", nameof(Organization), organizationId.ToString(), new { userId, role = normalizedRole }, ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "AddMember",
+                nameof(Organization),
+                organizationId.ToString(),
+                new { userId, role = normalizedRole },
+                ct);
 
             return Result.Success();
         }
@@ -432,13 +457,18 @@ public class OrganizationService : IOrganizationService
             var oldRole = membership.Role;
             membership.Role = normalizedRole;
             await _organizationMemberRepo.UpdateAsync(membership, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("UpdateMemberRole", nameof(Organization), organizationId.ToString(), new
-            {
-                userId,
-                OldRole = oldRole,
-                NewRole = normalizedRole
-            }, ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "UpdateMemberRole",
+                nameof(Organization),
+                organizationId.ToString(),
+                new
+                {
+                    userId,
+                    OldRole = oldRole,
+                    NewRole = normalizedRole
+                },
+                ct);
 
             return Result.Success();
         }
@@ -477,8 +507,13 @@ public class OrganizationService : IOrganizationService
         try
         {
             await _organizationMemberRepo.DeleteAsync(membership, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("RemoveMember", nameof(Organization), organizationId.ToString(), new { userId }, ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "RemoveMember",
+                nameof(Organization),
+                organizationId.ToString(),
+                new { userId },
+                ct);
             return Result.Success();
         }
         catch (DbUpdateConcurrencyException)

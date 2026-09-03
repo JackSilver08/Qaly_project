@@ -29,7 +29,7 @@ public interface ITaskService
     Task<Result> MarkViewedAsync(Guid projectId, Guid taskId, CancellationToken ct = default);
     Task<Result> NudgeAssigneeAsync(Guid projectId, Guid taskId, Guid? assigneeId = null, CancellationToken ct = default);
     Task<Result> AddDependencyAsync(Guid predecessorId, Guid successorId, string type = "FinishToStart", CancellationToken ct = default);
-    Task<Result> RemoveDependencyAsync(Guid dependencyId, CancellationToken ct = default);
+    Task<Result> RemoveDependencyAsync(Guid taskId, Guid dependencyId, CancellationToken ct = default);
     Task<Result<IEnumerable<TaskDependencyDto>>> GetDependenciesAsync(Guid taskId, CancellationToken ct = default);
 
     // Sprint Management

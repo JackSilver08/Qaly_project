@@ -198,6 +198,16 @@ export interface UserDto {
     createdAt: string;
 }
 
+/** Tenant-scoped collaborator picker row; platform role is disclosed only to System Admin. */
+export interface UserDirectoryDto {
+    id: string;
+    fullName: string;
+    email: string;
+    isActive: boolean;
+    avatarUrl: string | null;
+    systemRole: string | null;
+}
+
 /**
  * What the signed-in user may do inside a project, resolved by the server.
  * Render controls from this instead of re-deriving permissions from the role string.

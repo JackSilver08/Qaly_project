@@ -27,11 +27,29 @@ public class GitHubWebhookInbox : BaseEntity
     public string Payload { get; set; } = string.Empty;
 
     /// <summary>Pending, Processing, Processed, Failed.</summary>
-    public string Status { get; set; } = "Pending";
+    public string Status { get; set; } = GitHubWebhookInboxStatuses.Pending;
 
     public int AttemptCount { get; set; }
     public string? LastError { get; set; }
 
+    /// <summary>Identifies the worker that currently owns this delivery.</summary>
+    public string? LeaseOwner { get; set; }
+
+    /// <summary>
+    /// Upper bound for the current claim. A different worker may reclaim a Processing
+    /// delivery only after this instant, which makes a crashed worker recoverable.
+    /// </summary>
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+
     public DateTimeOffset ReceivedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset NextAttemptAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ProcessedAt { get; set; }
+}
+
+public static class GitHubWebhookInboxStatuses
+{
+    public const string Pending = "Pending";
+    public const string Processing = "Processing";
+    public const string Processed = "Processed";
+    public const string Failed = "Failed";
 }

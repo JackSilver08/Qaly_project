@@ -26,6 +26,8 @@ public class QalyDbContext : DbContext
     public DbSet<OrganizationMemberCapacityProfile> OrganizationMemberCapacityProfiles => Set<OrganizationMemberCapacityProfile>();
     public DbSet<MemberAvailabilityWindow> MemberAvailabilityWindows => Set<MemberAvailabilityWindow>();
     public DbSet<OrganizationSkill> OrganizationSkills => Set<OrganizationSkill>();
+    public DbSet<ProfessionalProfileDefinition> ProfessionalProfileDefinitions => Set<ProfessionalProfileDefinition>();
+    public DbSet<OrganizationMemberProfessionalProfile> OrganizationMemberProfessionalProfiles => Set<OrganizationMemberProfessionalProfile>();
     public DbSet<ModeratorAssignment> ModeratorAssignments => Set<ModeratorAssignment>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
@@ -88,6 +90,7 @@ public class QalyDbContext : DbContext
     public DbSet<TaskDependency> TaskDependencies => Set<TaskDependency>();
     public DbSet<WebhookSubscription> WebhookSubscriptions => Set<WebhookSubscription>();
     public DbSet<WebhookDeliveryLog> WebhookDeliveryLogs => Set<WebhookDeliveryLog>();
+    public DbSet<WebhookOutboxMessage> WebhookOutboxMessages => Set<WebhookOutboxMessage>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<ImportSession> ImportSessions => Set<ImportSession>();
     public DbSet<AiProviderConfig> AiProviderConfigs => Set<AiProviderConfig>();
@@ -116,6 +119,7 @@ public class QalyDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.HasSequence<long>("VectorSyncOutboxSequence");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(QalyDbContext).Assembly);
         ApplySoftDeleteFilters(modelBuilder);
     }

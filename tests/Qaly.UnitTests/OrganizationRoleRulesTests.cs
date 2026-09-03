@@ -30,7 +30,9 @@ public class OrganizationRoleRulesTests
     [InlineData("Admin", "OrganizationAdmin")]
     [InlineData("Manager", "OrganizationAdmin")]
     [InlineData("PrivacyOperator", "PrivacyOperator")]
-    [InlineData("unknown", "Member")]
+    [InlineData("Member", "Member")]
+    [InlineData("unknown", "")]
+    [InlineData("Guest", "")]
     public void Normalize_MigratesLegacyRoles(string role, string expected)
         => OrganizationRoleRules.Normalize(role).Should().Be(expected);
 
@@ -42,6 +44,24 @@ public class OrganizationRoleRulesTests
     [InlineData("Owner", false)]
     [InlineData("ScrumMaster", false)]
     [InlineData("unknown", false)]
+    [InlineData("", false)]
     public void TryNormalizeAssignableRole_PreventsOwnerAndProjectRoles(string role, bool expected)
         => OrganizationRoleRules.TryNormalizeAssignableRole(role, out _).Should().Be(expected);
+
+    [Theory]
+    [InlineData("Owner", true, "Owner")]
+    [InlineData("Admin", true, "OrganizationAdmin")]
+    [InlineData("Manager", true, "OrganizationAdmin")]
+    [InlineData("Member", true, "Member")]
+    [InlineData("Guest", false, "")]
+    [InlineData("ProjectManager", false, "")]
+    [InlineData(null, false, "")]
+    public void TryNormalizeKnownRole_AcceptsMigrationAliasesAndFailsClosed(
+        string? role,
+        bool expected,
+        string normalized)
+    {
+        OrganizationRoleRules.TryNormalizeKnownRole(role, out var result).Should().Be(expected);
+        result.Should().Be(normalized);
+    }
 }

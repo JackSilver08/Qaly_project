@@ -6,11 +6,12 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Qaly.Application.DTOs.User;
 using Qaly.Application.Services;
 using Qaly.Web.Auth;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Qaly.Web.Pages.Account;
 
 [AllowAnonymous]
-[IgnoreAntiforgeryToken]
+[EnableRateLimiting("account-login")]
 public partial class LoginModel : PageModel
 {
     private readonly IAuthService _authService;
@@ -57,7 +58,7 @@ public partial class LoginModel : PageModel
         }
         catch (Exception ex)
         {
-            LogLoginFailed(_logger, ex, Email);
+            LogLoginFailed(_logger, ex);
             ErrorMessage = "Không thể đăng nhập lúc này. Vui lòng thử lại.";
             return Page();
         }
@@ -66,6 +67,6 @@ public partial class LoginModel : PageModel
     private string SafeReturnUrl(string? returnUrl)
         => Url.IsLocalUrl(returnUrl) ? returnUrl! : "/";
 
-    [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Login failed unexpectedly for {Email}.")]
-    private static partial void LogLoginFailed(ILogger logger, Exception exception, string email);
+    [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Login failed unexpectedly.")]
+    private static partial void LogLoginFailed(ILogger logger, Exception exception);
 }

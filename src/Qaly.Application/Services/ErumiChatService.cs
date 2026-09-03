@@ -61,6 +61,7 @@ public sealed class ErumiChatService : IErumiChatService
     private readonly IProjectLaunchOrchestratorService? _projectLaunchOrchestrator;
     private readonly IAiNativeActionService? _nativeActionService;
     private readonly IPortfolioScheduleService? _portfolioScheduleService;
+    private readonly IProjectRoleCatalog? _projectRoleCatalog;
     private readonly ILogger<ErumiChatService>? _logger;
 
     public ErumiChatService(
@@ -79,7 +80,8 @@ public sealed class ErumiChatService : IErumiChatService
         IProjectLaunchOrchestratorService? projectLaunchOrchestrator = null,
         IAiNativeActionService? nativeActionService = null,
         IRepository<Sprint>? sprintRepo = null,
-        IPortfolioScheduleService? portfolioScheduleService = null)
+        IPortfolioScheduleService? portfolioScheduleService = null,
+        IProjectRoleCatalog? projectRoleCatalog = null)
     {
         _analyticsService = analyticsService;
         _projectService = projectService;
@@ -97,6 +99,7 @@ public sealed class ErumiChatService : IErumiChatService
         _nativeActionService = nativeActionService;
         _sprintRepo = sprintRepo;
         _portfolioScheduleService = portfolioScheduleService;
+        _projectRoleCatalog = projectRoleCatalog;
     }
 
     public async Task<Result<ErumiChatResponseDto>> ChatFastAsync(ErumiChatRequestDto request, CancellationToken ct = default)
@@ -2189,7 +2192,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             model);
     }
 
-    private async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
+    internal async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
         Guid projectId,
         Guid userId,
         CancellationToken ct)
@@ -2214,9 +2217,12 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             .Where(m => m.ProjectId == projectId && m.UserId == userId)
             .Select(m => m.Role)
             .FirstOrDefaultAsync(ct);
+        var resolvedRole = _projectRoleCatalog == null
+            ? null
+            : await _projectRoleCatalog.ResolveAsync(memberRole, project.OrganizationId, ct);
 
         var tier = AiCapabilityRules.ResolveTier(
-            memberRole,
+            resolvedRole?.BaseRole ?? memberRole,
             isSystemAdmin: ProjectRoleRules.IsSystemAdmin(_currentUserService.Role),
             isProjectOwner: project.OwnerId == userId);
 

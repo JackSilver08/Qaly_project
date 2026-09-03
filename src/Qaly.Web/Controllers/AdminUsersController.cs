@@ -61,6 +61,7 @@ public class AdminUsersController : BaseApiController
         var items = await query
             .OrderByDescending(user => user.Role == SystemRoleRules.Admin)
             .ThenBy(user => user.FullName)
+            .ThenBy(user => user.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(user => new AdminUserDto(
@@ -114,8 +115,8 @@ public class AdminUsersController : BaseApiController
             Role = role, IsActive = request.IsActive
         };
         _context.Users.Add(user);
+        await _auditLogService.StageAsync("AdminCreateUser", nameof(User), user.Id.ToString(), new { user.Email, user.Role, user.IsActive }, ct);
         await _context.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AdminCreateUser", nameof(User), user.Id.ToString(), new { user.Email, user.Role, user.IsActive }, ct);
         return CreatedAtAction(nameof(GetUser), new { id = user.Id }, ToDto(user));
     }
 
@@ -147,9 +148,9 @@ public class AdminUsersController : BaseApiController
         }
         if (!string.IsNullOrWhiteSpace(request.AvatarUrl)) user.AvatarUrl = request.AvatarUrl.Trim();
 
+        await _auditLogService.StageAsync("AdminUpdateUser", nameof(User), user.Id.ToString(), new { previous, current = new { user.FullName, user.Role, user.IsActive, user.AvatarUrl } }, ct);
         await _context.SaveChangesAsync(ct);
         if (securityChanged) await _sessionService.RevokeAllUserSessionsAsync(user.Id, ct);
-        await _auditLogService.LogAsync("AdminUpdateUser", nameof(User), user.Id.ToString(), new { previous, current = new { user.FullName, user.Role, user.IsActive, user.AvatarUrl } }, ct);
         return Ok(ToDto(user));
     }
 
@@ -244,8 +245,8 @@ public class AdminUsersController : BaseApiController
         currentAdmin.Role = SystemRoleRules.Moderator;
         await _context.SaveChangesAsync(ct);
         successor.Role = SystemRoleRules.Admin;
+        await _auditLogService.StageAsync("TransferSystemAdmin", nameof(User), successor.Id.ToString(), new { previousAdminId = currentAdmin.Id, successorId = successor.Id }, ct);
         await _context.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("TransferSystemAdmin", nameof(User), successor.Id.ToString(), new { previousAdminId = currentAdmin.Id, successorId = successor.Id }, ct);
         await transaction.CommitAsync(ct);
         await _sessionService.RevokeAllUserSessionsAsync(currentAdmin.Id, ct);
         await _sessionService.RevokeAllUserSessionsAsync(successor.Id, ct);
@@ -269,8 +270,8 @@ public class AdminUsersController : BaseApiController
             _context.Users.Add(new User { FullName = item.FullName.Trim(), Email = email, PasswordHash = HashPassword(item.Password), Role = role, IsActive = item.IsActive });
             created++;
         }
+        await _auditLogService.StageAsync("AdminImportUsers", nameof(User), "bulk", new { created, skipped }, ct);
         await _context.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AdminImportUsers", nameof(User), "bulk", new { created, skipped }, ct);
         return Ok(new { created, skipped });
     }
 

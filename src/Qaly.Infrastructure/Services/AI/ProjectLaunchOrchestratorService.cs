@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
@@ -21,17 +22,20 @@ public sealed partial class ProjectLaunchOrchestratorService : IProjectLaunchOrc
     private readonly ICurrentUserService _currentUser;
     private readonly IAiGateway _gateway;
     private readonly AiJobPlatformOptions _options;
+    private readonly ILogger<ProjectLaunchOrchestratorService> _logger;
 
     public ProjectLaunchOrchestratorService(
         QalyDbContext db,
         ICurrentUserService currentUser,
         IAiGateway gateway,
-        IOptions<AiJobPlatformOptions> options)
+        IOptions<AiJobPlatformOptions> options,
+        ILogger<ProjectLaunchOrchestratorService> logger)
     {
         _db = db;
         _currentUser = currentUser;
         _gateway = gateway;
         _options = options.Value;
+        _logger = logger;
     }
 
     public async Task<Result<ProjectLaunchPlanDto>> GeneratePlanAsync(
@@ -584,7 +588,10 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
             .Include(item => item.Members)
             .SingleOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization == null) return Result.NotFound();
-        var userRole = await _db.Users.AsNoTracking().Where(item => item.Id == userId).Select(item => item.Role).SingleOrDefaultAsync(ct);
+        var userRole = await _db.Users.AsNoTracking()
+            .Where(item => item.Id == userId && item.IsActive)
+            .Select(item => item.Role)
+            .SingleOrDefaultAsync(ct);
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) || ProjectRoleRules.IsSystemAdmin(userRole);
         var membership = organization.Members.FirstOrDefault(item => item.UserId == userId);
         var readable = isAdmin || organization.OwnerId == userId || membership != null;

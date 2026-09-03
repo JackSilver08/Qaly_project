@@ -11,14 +11,18 @@ namespace Qaly.Application.Services;
 /// </summary>
 public static class ProjectPermissionRules
 {
-    public static ProjectPermissionsDto Resolve(string? projectRole, bool isOwner, bool isSystemAdmin)
+    public static ProjectPermissionsDto Resolve(
+        string? projectRole,
+        bool isOwner,
+        bool isSystemAdmin,
+        bool isOrganizationManager = false)
     {
         var effectiveRole = isOwner
             ? ProjectRoleRules.Owner
             : ProjectRoleRules.NormalizeProjectRole(projectRole);
 
-        var isMemberOfProject = isOwner || isSystemAdmin || !string.IsNullOrWhiteSpace(projectRole);
-        var manages = isOwner || isSystemAdmin || ProjectRoleRules.CanManageProject(effectiveRole);
+        var isMemberOfProject = isOwner || isSystemAdmin || isOrganizationManager || !string.IsNullOrWhiteSpace(projectRole);
+        var manages = isOwner || isSystemAdmin || isOrganizationManager || ProjectRoleRules.CanManageProject(effectiveRole);
         var readOnly = !manages && (ProjectRoleRules.IsViewer(effectiveRole) || ProjectRoleRules.IsCustomer(effectiveRole));
         var canWrite = isMemberOfProject && !readOnly;
 
@@ -31,14 +35,23 @@ public static class ProjectPermissionRules
             || string.Equals(effectiveRole, ProjectRoleRules.Tester, StringComparison.Ordinal)
             || string.Equals(effectiveRole, ProjectRoleRules.Reviewer, StringComparison.Ordinal);
 
-        var aiTier = AiCapabilityRules.ResolveTier(
-            projectRole,
-            isSystemAdmin: isSystemAdmin,
-            isProjectOwner: isOwner);
+        var aiTier = isOrganizationManager
+            ? AiCapabilityTier.Full
+            : AiCapabilityRules.ResolveTier(
+                projectRole,
+                isSystemAdmin: isSystemAdmin,
+                isProjectOwner: isOwner);
+
+        var returnedRole = isOrganizationManager && string.IsNullOrWhiteSpace(projectRole)
+            ? OrganizationRoleRules.OrganizationAdmin
+            : isMemberOfProject ? effectiveRole : string.Empty;
+        var returnedLabel = isOrganizationManager && string.IsNullOrWhiteSpace(projectRole)
+            ? "Quản trị tổ chức (portfolio)"
+            : DescribeRoleVietnamese(isMemberOfProject ? effectiveRole : null);
 
         return new ProjectPermissionsDto(
-            Role: isMemberOfProject ? effectiveRole : string.Empty,
-            RoleLabel: DescribeRoleVietnamese(isMemberOfProject ? effectiveRole : null),
+            Role: returnedRole,
+            RoleLabel: returnedLabel,
             CanManageProject: manages,
             CanManageMembers: manages,
             CanManageAllTasks: manages,

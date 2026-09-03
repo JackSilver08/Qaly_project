@@ -12,10 +12,12 @@ namespace Qaly.Infrastructure.Services.AI;
 public sealed class AiSourceGuard : IAiSourceGuard
 {
     private readonly QalyDbContext _db;
+    private readonly IAiNativeAuthorizationService _authorization;
 
-    public AiSourceGuard(QalyDbContext db)
+    public AiSourceGuard(QalyDbContext db, IAiNativeAuthorizationService authorization)
     {
         _db = db;
+        _authorization = authorization;
     }
 
     public async Task<AiSourceCaptureResult> CaptureAsync(
@@ -364,25 +366,19 @@ public sealed class AiSourceGuard : IAiSourceGuard
 
     private async Task<bool> CanAccessProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (project.OwnerId == userId || await IsAdminAsync(userId, ct)) return true;
-        if (await _db.ProjectMembers.AnyAsync(member => member.ProjectId == project.Id && member.UserId == userId, ct)) return true;
-        if (!project.OrganizationId.HasValue) return false;
-        if (project.Organization?.OwnerId == userId) return true;
-        return await _db.OrganizationMembers.AnyAsync(
-            member => member.OrganizationId == project.OrganizationId.Value && member.UserId == userId,
-            ct);
+        var isAdmin = await IsAdminAsync(userId, ct);
+        return (await _authorization.ResolveProjectAsync(project, userId, isAdmin, ct)).CanRead;
     }
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
-        if (await IsAdminAsync(userId, ct)) return true;
-        var project = await _db.Projects.AsNoTracking().FirstOrDefaultAsync(item => item.Id == projectId, ct);
+        var project = await _db.Projects
+            .AsNoTracking()
+            .Include(item => item.Organization)
+            .FirstOrDefaultAsync(item => item.Id == projectId, ct);
         if (project == null) return false;
-        if (project.OwnerId == userId) return true;
-        var role = await _db.ProjectMembers.Where(member => member.ProjectId == projectId && member.UserId == userId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        return ProjectRoleRules.CanManageProject(role);
+        var isAdmin = await IsAdminAsync(userId, ct);
+        return (await _authorization.ResolveProjectAsync(project, userId, isAdmin, ct)).CanManage;
     }
 
     private async Task<bool> CanAccessGroupAsync(Guid groupId, Guid userId, CancellationToken ct)
@@ -391,7 +387,7 @@ public sealed class AiSourceGuard : IAiSourceGuard
            await _db.WorkGroupMembers.AnyAsync(member => member.WorkGroupId == groupId && member.UserId == userId, ct);
 
     private async Task<bool> IsAdminAsync(Guid userId, CancellationToken ct)
-        => await _db.Users.AnyAsync(user => user.Id == userId && user.Role == "Admin", ct);
+        => await _db.Users.AnyAsync(user => user.Id == userId && user.IsActive && user.Role == "Admin", ct);
 
     private static SourceState CreateState(DateTimeOffset? updatedAt, string hashInput, string? additionalVersion = null)
     {

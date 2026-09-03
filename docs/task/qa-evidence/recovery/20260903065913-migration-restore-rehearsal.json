@@ -1,0 +1,19 @@
+{
+  "scenario": "Full EF migration chain, backup, clean restore and integrity check",
+  "startedAt": "2026-09-03T06:59:13.6944762+07:00",
+  "finishedAt": "2026-09-03T06:59:40.5783285+07:00",
+  "operator": "codex-production-readiness",
+  "server": "(localdb)\\MSSQLLocalDB",
+  "sourceDatabase": "QalyMigrationRehearsal_20260903065913",
+  "targetDatabase": "QalyRestoreRehearsal_20260903065913",
+  "migration": "passed",
+  "appliedMigrations": 59,
+  "latestMigration": "20260903130000_P026VectorSyncOutboxReliability",
+  "backup": "passed",
+  "cleanRestore": "passed",
+  "sourceCleanup": "dropped-rehearsal-database",
+  "durationSeconds": 26.88,
+  "success": true,
+  "error": null,
+  "backupSha256": "9FC7AC6CB31234281737A2836CBEDC8C0E4D6A6DCFA9D047782997E6D1430229"
+}

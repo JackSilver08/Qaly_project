@@ -14,6 +14,10 @@ defineProps<{
   userRole: string | null
   userAvatarUrl: string | null
   userLoading: boolean
+  canAccessArchivedProjects: boolean
+  canAccessSettings: boolean
+  canStartSimulation: boolean
+  simulationUsers: Array<{ id: string; fullName: string; role: string }>
 }>()
 
 const emit = defineEmits<{
@@ -64,7 +68,7 @@ onBeforeUnmount(() => {
 <template>
   <!-- Shared shell adapts the old UI structure: full top header, left nav, single scrolling content panel. -->
   <div class="app-shell" :class="{ 'is-chat-shell': isChatShell }">
-    <SimulationHeaderBanner />
+    <SimulationHeaderBanner :can-start="canStartSimulation" :users="simulationUsers" />
     <TopHeader
       brand-name="QALY"
       :notification-count="notificationCount"
@@ -84,6 +88,8 @@ onBeforeUnmount(() => {
       :user-loading="userLoading"
       :user-name="userName"
       :user-role="userRole"
+      :can-access-archived-projects="canAccessArchivedProjects"
+      :can-access-settings="canAccessSettings"
       @navigate="handleNavigate"
     />
 

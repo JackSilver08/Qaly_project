@@ -10,6 +10,14 @@ namespace Qaly.Application.Services;
 
 public class WikiService : IWikiService
 {
+    private static readonly HashSet<string> SupportedVisibilities = new(StringComparer.Ordinal)
+    {
+        "public",
+        "customer_safe",
+        "internal",
+        "private"
+    };
+
     private readonly IRepository<WikiPage> _wikiRepo;
     private readonly IRepository<Project> _projectRepo;
     private readonly IRepository<User> _userRepo;
@@ -44,12 +52,20 @@ public class WikiService : IWikiService
         }
 
         var query = _wikiRepo.GetQueryable()
-            .Where(p => p.ProjectId == projectId);
+            .Where(p => p.ProjectId == projectId && SupportedVisibilities.Contains(p.Visibility));
 
-        if (!await _taskAccessPolicy.CanReadInternalWikiAsync(projectId, project.OwnerId, ct))
+        var canReadInternal = await _taskAccessPolicy.CanReadInternalWikiAsync(projectId, project.OwnerId, ct);
+        if (!canReadInternal)
         {
             // Users who cannot read internal wiki should only see public and customer_safe pages
             query = query.Where(p => p.Visibility == "public" || p.Visibility == "customer_safe");
+        }
+        else if (!await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+        {
+            // A private page is visible only to its author and project managers. Internal access alone
+            // must not turn a private draft into a project-wide document.
+            var currentUserId = _taskAccessPolicy.CurrentUserId!.Value;
+            query = query.Where(p => p.Visibility != "private" || p.AuthorId == currentUserId);
         }
 
         var pages = await query
@@ -75,6 +91,17 @@ public class WikiService : IWikiService
             return Result.Failure<WikiPageDto>("Wiki title is required.", 400);
         }
 
+        if (dto.Title.Trim().Length > 200)
+        {
+            return Result.Failure<WikiPageDto>("Tiêu đề Wiki không được vượt quá 200 ký tự.", 400);
+        }
+
+        var visibility = NormalizeVisibility(dto.Visibility);
+        if (visibility == null)
+        {
+            return Result.Failure<WikiPageDto>("Phạm vi Wiki phải là public, customer_safe, internal hoặc private.", 400);
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<WikiPageDto>();
 
@@ -91,15 +118,20 @@ public class WikiService : IWikiService
             ProjectId = projectId,
             Title = dto.Title.Trim(),
             Content = dto.Content ?? string.Empty,
-            IsPublic = string.Equals(dto.Visibility, "public", StringComparison.OrdinalIgnoreCase),
-            Visibility = string.IsNullOrWhiteSpace(dto.Visibility) ? "internal" : dto.Visibility.Trim(),
+            IsPublic = visibility == "public",
+            Visibility = visibility,
             AuthorId = currentUserId.Value,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
         await _wikiRepo.AddAsync(page, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(WikiPage), page.Id.ToString(), new { projectId, page.Title }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(WikiPage),
+            page.Id.ToString(),
+            new { projectId, page.Title },
+            ct);
 
         var author = await _userRepo.GetByIdAsync(currentUserId.Value, ct);
 
@@ -120,6 +152,17 @@ public class WikiService : IWikiService
             return Result.Failure<WikiPageDto>("Wiki title is required.", 400);
         }
 
+        if (dto.Title.Trim().Length > 200)
+        {
+            return Result.Failure<WikiPageDto>("Tiêu đề Wiki không được vượt quá 200 ký tự.", 400);
+        }
+
+        var visibility = NormalizeVisibility(dto.Visibility);
+        if (visibility == null)
+        {
+            return Result.Failure<WikiPageDto>("Phạm vi Wiki phải là public, customer_safe, internal hoặc private.", 400);
+        }
+
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound<WikiPageDto>();
 
@@ -131,15 +174,28 @@ public class WikiService : IWikiService
         var page = await _wikiRepo.GetByIdAsync(id, ct);
         if (page == null || page.ProjectId != projectId) return Result.NotFound<WikiPageDto>();
 
+        var currentUserId = _taskAccessPolicy.CurrentUserId;
+        if (page.Visibility == "private" &&
+            page.AuthorId != currentUserId &&
+            !await _taskAccessPolicy.CanManageProjectAsync(projectId, project.OwnerId, ct))
+        {
+            return Result.Forbidden<WikiPageDto>("Chỉ tác giả hoặc người quản lý dự án được sửa trang Wiki riêng tư này.");
+        }
+
         page.Title = dto.Title.Trim();
         page.Content = dto.Content ?? string.Empty;
-        page.Visibility = string.IsNullOrWhiteSpace(dto.Visibility) ? "internal" : dto.Visibility.Trim();
-        page.IsPublic = string.Equals(page.Visibility, "public", StringComparison.OrdinalIgnoreCase);
+        page.Visibility = visibility;
+        page.IsPublic = visibility == "public";
         page.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _wikiRepo.UpdateAsync(page, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Update", nameof(WikiPage), page.Id.ToString(), new { projectId, page.Title }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Update",
+            nameof(WikiPage),
+            page.Id.ToString(),
+            new { projectId, page.Title },
+            ct);
 
         var author = await _userRepo.GetByIdAsync(page.AuthorId, ct);
 
@@ -167,9 +223,22 @@ public class WikiService : IWikiService
         if (page == null || page.ProjectId != projectId) return Result.NotFound();
 
         await _wikiRepo.DeleteAsync(page, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Delete", nameof(WikiPage), id.ToString(), new { projectId, page.Title }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Delete",
+            nameof(WikiPage),
+            id.ToString(),
+            new { projectId, page.Title },
+            ct);
 
         return Result.Success();
+    }
+
+    private static string? NormalizeVisibility(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value)
+            ? "internal"
+            : value.Trim().ToLowerInvariant();
+        return SupportedVisibilities.Contains(normalized) ? normalized : null;
     }
 }

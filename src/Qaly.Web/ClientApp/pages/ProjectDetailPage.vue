@@ -44,7 +44,7 @@ import TaskCompletionContributorsCard from "../components/TaskCompletionContribu
 import { useDashboardContext } from "../composables/dashboard-context";
 import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { apiResult } from "../utils/api-client";
+import { apiFetch, apiResult } from "../utils/api-client";
 import type {
   DashboardTask,
   KanbanMoveResultDto,
@@ -261,7 +261,7 @@ function onImported(result: any) {
 async function handleUndoFromBanner() {
   if (!undoBannerData.value) return;
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/import/sessions/${undoBannerData.value.importSessionId}`,
       { method: "DELETE" },
     );
@@ -1835,7 +1835,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
         <div v-if="activeProjectTab === 'wiki'" class="tab-pane reveal">
           <ProjectWikiTab
             :project-name="selectedProject?.name ?? ''"
-            :is-admin="isProjectAdmin"
+            :can-write="projectPermissions?.canWriteWiki ?? false"
+            :can-manage="isProjectAdmin"
           />
         </div>
 

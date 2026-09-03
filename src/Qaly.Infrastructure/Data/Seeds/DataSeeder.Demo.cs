@@ -24,7 +24,8 @@ public partial class DataSeeder
         {
             var presentationSeedChanged = await EnsurePresentationDemoSeedAsync();
             var aiEvidenceChanged = await EnsureAiNativeDemoEvidenceAsync();
-            return presentationSeedChanged || aiEvidenceChanged;
+            var professionalProfilesChanged = await EnsureProfessionalProfileDemoSeedAsync();
+            return presentationSeedChanged || aiEvidenceChanged || professionalProfilesChanged;
         }
 
         var isDatabaseEmpty =
@@ -46,6 +47,7 @@ public partial class DataSeeder
 
         await SeedRichDemoDataAsync();
         await EnsureAiNativeDemoEvidenceAsync();
+        await EnsureProfessionalProfileDemoSeedAsync();
         return true;
     }
 
@@ -139,6 +141,8 @@ public partial class DataSeeder
         await RemoveEntitiesAsync(_context.WorkGroups.IgnoreQueryFilters());
         await RemoveEntitiesAsync(_context.OrganizationWorkRuleDecisions);
         await RemoveEntitiesAsync(_context.OrganizationWorkRuleSets);
+        await RemoveEntitiesAsync(_context.OrganizationMemberProfessionalProfiles);
+        await RemoveEntitiesAsync(_context.ProfessionalProfileDefinitions);
         await RemoveEntitiesAsync(_context.OrganizationSkills);
         await RemoveEntitiesAsync(_context.OrganizationMembers);
         await RemoveEntitiesAsync(_context.Organizations);
@@ -1361,8 +1365,26 @@ public partial class DataSeeder
         });
 
         await _context.VectorSyncOutbox.AddRangeAsync(
-            new VectorSyncOutbox { EventType = "TaskUpdated", Payload = $$"""{"id":"{{tasks["erumi-db-snapshot"].Id}}","projectCode":"erumi-local-analytics"}""", RetryCount = 0, ProcessedAt = now.AddHours(-2), CreatedAt = now.AddHours(-3) },
-            new VectorSyncOutbox { EventType = "WikiPageCreated", Payload = $$"""{"title":"{{DemoSeedMarkerTitle}}","projectCode":"qaly-workos-demo"}""", RetryCount = 1, ErrorMessage = "Vector sync disabled in local demo", CreatedAt = now.AddHours(-1) });
+            new VectorSyncOutbox
+            {
+                EventType = VectorSyncEventTypes.TaskUpdated,
+                AggregateType = VectorSyncAggregateTypes.Task,
+                AggregateId = tasks["erumi-db-snapshot"].Id,
+                Payload = $$"""{"Id":"{{tasks["erumi-db-snapshot"].Id}}","projectCode":"erumi-local-analytics"}""",
+                RetryCount = 0,
+                ProcessedAt = now.AddHours(-2),
+                CreatedAt = now.AddHours(-3)
+            },
+            new VectorSyncOutbox
+            {
+                EventType = VectorSyncEventTypes.TaskUpdated,
+                AggregateType = VectorSyncAggregateTypes.Task,
+                AggregateId = tasks["workos-kpi-dashboard"].Id,
+                Payload = $$"""{"Id":"{{tasks["workos-kpi-dashboard"].Id}}","projectCode":"qaly-workos-demo"}""",
+                RetryCount = 1,
+                ErrorMessage = "Vector sync disabled in local demo",
+                CreatedAt = now.AddHours(-1)
+            });
 
         await _context.AuditLogs.AddRangeAsync(
             new AuditLog { Action = "Create", EntityType = "ApiKey", EntityId = "Demo Integration Key", UserId = U("admin@qaly.dev").Id, ChangesJson = """{"scopes":["tasks:read","tasks:write"]}""", IpAddress = "127.0.0.1", Timestamp = now.AddDays(-6) },

@@ -25,13 +25,13 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly AiJobPlatformOptions _options;
-    private readonly IAiNativeAuthorizationService? _authorization;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public AiAssistantContextRegistry(
         QalyDbContext db,
         ICurrentUserService currentUser,
         IOptions<AiJobPlatformOptions> options,
-        IAiNativeAuthorizationService? authorization = null)
+        IAiNativeAuthorizationService authorization)
     {
         _db = db;
         _currentUser = currentUser;
@@ -58,7 +58,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
 
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
             await _db.Users.AsNoTracking().AnyAsync(
-                user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin, ct);
+                user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin, ct);
         var systemTier = await ResolveSystemTierAsync(userId, ct);
         if (systemTier == AiNativeSystemTier.Restricted)
         {
@@ -175,7 +175,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         }
         var isAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
             await _db.Users.AsNoTracking().AnyAsync(
-                user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin,
+                user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin,
                 ct);
         var systemTier = await ResolveSystemTierAsync(userId, ct);
         if (systemTier == AiNativeSystemTier.Restricted)
@@ -638,6 +638,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var skills = await _db.OrganizationSkills.AsNoTracking()
             .Where(item => item.OrganizationId == organization.Id && item.IsActive)
             .OrderBy(item => item.Name)
+            .ThenBy(item => item.Id)
             .Select(item => new { item.Id, item.Name, item.Description, item.UpdatedAt, item.CreatedAt })
             .Take(MaxSkillFacts + 1)
             .ToListAsync(ct);
@@ -904,6 +905,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
         var members = await _db.ProjectMembers.AsNoTracking()
             .Where(item => item.ProjectId == project.Id && item.User.IsActive)
             .OrderBy(item => item.User.FullName)
+            .ThenBy(item => item.UserId)
             .Select(item => new
             {
                 item.UserId,
@@ -937,6 +939,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             ? await _db.OrganizationSkills.AsNoTracking()
                 .Where(item => item.OrganizationId == project.OrganizationId.Value && item.IsActive)
                 .OrderBy(item => item.Name)
+                .ThenBy(item => item.Id)
                 .Select(item => new { item.Id, item.Name, item.Description, item.UpdatedAt, item.CreatedAt })
                 .Take(MaxSkillFacts + 1)
                 .ToListAsync(ct)
@@ -1134,10 +1137,21 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             source.Redactions.Count == 0 ? null : "source_redacted");
 
     private static bool CanReadProject(Project project, Guid userId, bool isAdmin)
-        => isAdmin || project.OwnerId == userId ||
-           project.Members.Any(member => member.UserId == userId) ||
-           project.Organization?.OwnerId == userId ||
-           project.Organization?.Members.Any(member => member.UserId == userId) == true;
+    {
+        if (isAdmin) return true;
+        if (project.OrganizationId.HasValue)
+        {
+            if (project.Organization == null || !project.Organization.IsActive) return false;
+            if (project.Organization.OwnerId == userId) return true;
+            var organizationRole = project.Organization.Members
+                .Where(member => member.UserId == userId)
+                .Select(member => member.Role)
+                .FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(organizationRole)) return false;
+            if (OrganizationRoleRules.CanManageOrganization(organizationRole)) return true;
+        }
+        return project.OwnerId == userId || project.Members.Any(member => member.UserId == userId);
+    }
 
     private static bool CanReadOrganization(Organization organization, Guid userId, bool isAdmin)
         => isAdmin || organization.OwnerId == userId ||
@@ -1148,34 +1162,15 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
            organization.Members.Any(member => member.UserId == userId &&
                OrganizationRoleRules.CanManageOrganization(member.Role));
 
-    private static bool CanManageProject(Project project, Guid userId, bool isAdmin)
-        => isAdmin || project.OwnerId == userId ||
-           project.Members.Any(member => member.UserId == userId && ProjectRoleRules.CanManageProject(member.Role)) ||
-           project.Organization?.OwnerId == userId ||
-           project.Organization?.Members.Any(member =>
-               member.UserId == userId &&
-               (string.Equals(member.Role, "Owner", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(member.Role, "Admin", StringComparison.OrdinalIgnoreCase))) == true;
-
     private Task<AiNativeSystemTier> ResolveSystemTierAsync(Guid userId, CancellationToken ct)
-        => _authorization == null
-            ? Task.FromResult(AiNativeSystemTier.Full)
-            : _authorization.ResolveSystemTierAsync(userId, _currentUser.Role, ct);
+        => _authorization.ResolveSystemTierAsync(userId, _currentUser.Role, ct);
 
     private Task<AiNativeProjectAuthorization> ResolveProjectAuthorizationAsync(
         Project project,
         Guid userId,
         bool isAdmin,
         CancellationToken ct)
-        => _authorization == null
-            ? Task.FromResult(new AiNativeProjectAuthorization(
-                CanReadProject(project, userId, isAdmin),
-                CanManageProject(project, userId, isAdmin),
-                CanManageProject(project, userId, isAdmin),
-                CanManageProject(project, userId, isAdmin)
-                    ? AiCapabilityTier.Full
-                    : AiCapabilityTier.ReadOnly))
-            : _authorization.ResolveProjectAsync(project, userId, isAdmin, ct);
+        => _authorization.ResolveProjectAsync(project, userId, isAdmin, ct);
 
     private static Result<AiAssistantExecutionContextDto> RestrictedContext()
         => Result.Success(new AiAssistantExecutionContextDto(

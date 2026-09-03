@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -23,16 +22,25 @@ public class ApiKeyAuthenticationOptions : AuthenticationSchemeOptions
 
 public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthenticationOptions>
 {
+    private static readonly Action<ILogger, Guid, Exception?> LogLastUsedPersistenceFailure =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Warning,
+            new EventId(2401, nameof(LogLastUsedPersistenceFailure)),
+            "Unable to persist LastUsedAt for API key {ApiKeyId}.");
+
     private readonly IRepository<ApiKey> _apiKeyRepo;
+    private readonly IUnitOfWork _unitOfWork;
 
     public ApiKeyAuthenticationHandler(
         IOptionsMonitor<ApiKeyAuthenticationOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder,
-        IRepository<ApiKey> apiKeyRepo)
+        IRepository<ApiKey> apiKeyRepo,
+        IUnitOfWork unitOfWork)
         : base(options, logger, encoder)
     {
         _apiKeyRepo = apiKeyRepo;
+        _unitOfWork = unitOfWork;
     }
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -61,15 +69,28 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return AuthenticateResult.Fail("API Key không hợp lệ.");
 
         // Check expiry
-        if (candidate.ExpiresAt.HasValue && candidate.ExpiresAt.Value < DateTimeOffset.UtcNow)
+        if (candidate.ExpiresAt.HasValue && candidate.ExpiresAt.Value <= DateTimeOffset.UtcNow)
             return AuthenticateResult.Fail("API Key đã hết hạn.");
 
-        // Update LastUsedAt
-        candidate.LastUsedAt = DateTimeOffset.UtcNow;
-        await _apiKeyRepo.UpdateAsync(candidate);
+        // Persist usage without writing on every request in a busy integration.
+        var now = DateTimeOffset.UtcNow;
+        if (!candidate.LastUsedAt.HasValue || candidate.LastUsedAt.Value < now.AddMinutes(-5))
+        {
+            candidate.LastUsedAt = now;
+            candidate.UpdatedAt = now;
+            await _apiKeyRepo.UpdateAsync(candidate, Context.RequestAborted);
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(Context.RequestAborted);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogLastUsedPersistenceFailure(Logger, candidate.Id, exception);
+            }
+        }
 
         // Parse scopes
-        var scopes = JsonSerializer.Deserialize<List<string>>(candidate.Scopes) ?? [];
+        var scopes = ApiKeyService.DeserializeScopes(candidate.Scopes);
 
         var identity = new ClaimsIdentity(ApiKeyDefaults.AuthenticationScheme);
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, candidate.UserId.ToString()));

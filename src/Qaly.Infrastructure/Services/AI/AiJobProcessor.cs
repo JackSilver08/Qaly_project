@@ -61,7 +61,14 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
             .FirstOrDefaultAsync(item => item.Id == lease.JobId, cancellationToken);
         var attempt = await _db.AiProviderAttempts
             .FirstOrDefaultAsync(item => item.Id == lease.ProviderAttemptId, cancellationToken);
-        if (job == null || attempt == null || job.Dispatch?.LeaseOwner != workerId) return;
+        if (job == null ||
+            attempt == null ||
+            job.Dispatch?.LeaseOwner != workerId ||
+            job.Dispatch.LeaseExpiresAt is not { } leaseExpiresAt ||
+            leaseExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return;
+        }
 
         if (!_options.CurrentValue.WorkerEnabled)
         {
@@ -307,6 +314,13 @@ public sealed partial class AiJobProcessor : IAiJobProcessor
         await _db.Entry(job).ReloadAsync(cancellationToken);
         await _db.Entry(attempt).ReloadAsync(cancellationToken);
         if (job.Dispatch != null) await _db.Entry(job.Dispatch).ReloadAsync(cancellationToken);
+
+        if (job.Dispatch?.LeaseOwner != workerId ||
+            job.Dispatch.LeaseExpiresAt is not { } refreshedLeaseExpiresAt ||
+            refreshedLeaseExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            return;
+        }
 
         if (!_options.CurrentValue.WorkerEnabled)
         {

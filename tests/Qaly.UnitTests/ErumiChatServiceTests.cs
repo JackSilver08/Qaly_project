@@ -289,7 +289,10 @@ public class ErumiChatServiceTests : IDisposable
             OverdueTasks: 0,
             TotalEstimatedHours: 10,
             TotalActualHours: 2,
-            MemberProductivity: new List<MemberProductivityDto>(),
+            MemberProductivity: new List<MemberProductivityDto>
+            {
+                new(userId, "PM Khang", AssignedTasks: 1, DoneTasks: 0, LoggedHours: 2)
+            },
             DailyProductivity: new List<DailyProductivityDto>());
 
         _analyticsServiceMock.Setup(s => s.GetProjectAnalyticsAsync(projectId, It.IsAny<CancellationToken>()))
@@ -722,6 +725,127 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChatFastAsync_CustomRoleInheritingManager_ReceivesFullAiToolTier()
+    {
+        var projectId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var ownerId = Guid.NewGuid();
+        var roleKey = $"ai-delivery-lead-{Guid.NewGuid():N}";
+        var projectDto = new ProjectDto(
+            projectId,
+            "Custom AI project",
+            "CUSTOM-AI",
+            "Custom role authorization",
+            null,
+            "Active",
+            null,
+            null,
+            ownerId,
+            "Project owner",
+            2,
+            0,
+            0,
+            [],
+            DateTimeOffset.UtcNow,
+            organizationId,
+            "AI tenant");
+        _projectServiceMock.Setup(service => service.GetByIdAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(projectDto));
+        _analyticsServiceMock.Setup(service => service.GetProjectAnalyticsAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ProjectAnalyticsDto(0, 0, 0, 0, 0, 0, [], [])));
+        _taskServiceMock.Setup(service => service.GetByProjectAsync(
+                projectId,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new PagedResult<TaskItemDto>
+            {
+                Items = [],
+                TotalCount = 0,
+                PageNumber = 1,
+                PageSize = 100
+            }));
+        _currentUserServiceMock.SetupGet(service => service.UserId).Returns(userId);
+        _currentUserServiceMock.SetupGet(service => service.Role).Returns("User");
+        _context.Users.AddRange(
+            new User { Id = userId, FullName = "Custom manager", Email = $"custom-manager-{userId:N}@qaly.test", IsActive = true },
+            new User { Id = ownerId, FullName = "Project owner", Email = $"project-owner-{ownerId:N}@qaly.test", IsActive = true });
+        _context.Organizations.Add(new Organization
+        {
+            Id = organizationId,
+            Name = "AI tenant",
+            Code = $"AI-TENANT-{organizationId:N}",
+            OwnerId = ownerId,
+            IsActive = true
+        });
+        _context.Projects.Add(new Project
+        {
+            Id = projectId,
+            OrganizationId = organizationId,
+            OwnerId = ownerId,
+            Name = projectDto.Name,
+            Code = projectDto.Code
+        });
+        _context.OrganizationMembers.Add(new OrganizationMember
+        {
+            OrganizationId = organizationId,
+            UserId = userId,
+            Role = OrganizationRoleRules.Member
+        });
+        _context.ProjectMembers.Add(new ProjectMember { ProjectId = projectId, UserId = userId, Role = roleKey });
+        _context.ProjectRoleDefinitions.Add(new ProjectRoleDefinition
+        {
+            OrganizationId = organizationId,
+            Key = roleKey,
+            DisplayName = "AI Delivery Lead",
+            BaseRole = ProjectRoleRules.Manager,
+            CreatedByUserId = ownerId,
+            IsActive = true
+        });
+        await _context.SaveChangesAsync();
+        (await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == projectId && member.UserId == userId)
+            .Select(member => member.Role)
+            .SingleAsync()).Should().Be(roleKey);
+        var roleCatalog = new ProjectRoleCatalog(new GenericRepository<ProjectRoleDefinition>(_context));
+        (await roleCatalog.ResolveAsync(roleKey, organizationId))!.BaseRole.Should().Be(ProjectRoleRules.Manager);
+        var aiTools = new AiTools(
+            _taskServiceMock.Object,
+            _projectServiceMock.Object,
+            Mock.Of<ICommentService>(),
+            Mock.Of<ITimeTrackingService>(),
+            Mock.Of<IAiExportService>(),
+            Mock.Of<IRepository<Project>>(),
+            Mock.Of<IRepository<TaskItem>>(),
+            _memberRepo,
+            _currentUserServiceMock.Object,
+            Mock.Of<IVectorStorageService>(),
+            Mock.Of<IEmbeddingGenerator<string, Embedding<float>>>());
+        var service = new ErumiChatService(
+            _analyticsServiceMock.Object,
+            _projectServiceMock.Object,
+            _taskServiceMock.Object,
+            _memberRepo,
+            _currentUserServiceMock.Object,
+            _aiGatewayMock.Object,
+            aiTools: aiTools,
+            projectRoleCatalog: roleCatalog);
+
+        var tools = await service.GetFilteredToolsForProjectAsync(projectId, userId, CancellationToken.None);
+
+        tools.Should().NotBeNull();
+        tools!.OfType<AIFunction>().Select(tool => tool.Name)
+            .Should().Contain(["AssignTask", "SuggestTaskAssignment", "GetMemberWorkload"]);
+    }
+
+    [Fact]
     public async Task ChatFastAsync_WithExplicitDeepSeek_UsesGatewayAndReturnsActualModel()
     {
         var projectId = Guid.NewGuid();
@@ -1003,9 +1127,16 @@ public class ErumiChatServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Data!.Disposition.Should().Be("guided_answer");
         result.Data.Intent.Should().Be(AiAssistantTurnContract.GuidedAnswerIntent);
-        result.Data.Answer.Should().BeNull();
+        result.Data.Answer.Should().NotBeNull();
+        result.Data.Answer!.UsedAi.Should().BeFalse();
+        result.Data.Answer.Model.Should().NotBeNull();
+        result.Data.Answer.Model!.Provider.Should().Be("Qaly");
+        result.Data.Answer.Model.Id.Should().Be("qaly-native");
+        result.Data.Answer.Model.Status.Should().Be("server_fallback");
+        result.Data.ActualProvider.Should().Be("Qaly");
+        result.Data.ActualModel.Should().Be("qaly-native");
         result.Data.Artifact.Should().BeNull();
-        result.Data.AssistantMessage.Should().Contain("luồng thủ công tương ứng trong Qaly");
+        result.Data.AssistantMessage.Should().Contain("hướng dẫn dự phòng trên máy chủ");
         result.Data.AssistantMessage.Should().Contain("chưa có dữ liệu nào được thay đổi");
     }
 

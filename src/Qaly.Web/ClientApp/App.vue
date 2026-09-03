@@ -25,6 +25,7 @@ import { dashboardContextKey } from "./composables/dashboard-context";
 import { showError, showInfo, showSuccess } from "./composables/use-toast";
 import { confirmDialog } from "./composables/use-confirm-dialog";
 import { useDashboard } from "./composables/use-dashboard-state";
+import { usePermissions } from "./composables/use-permissions";
 import { useProjectActions } from "./composables/use-project-actions";
 import { useTaskActions } from "./composables/use-task-actions";
 import {
@@ -79,6 +80,8 @@ const {
   loadMe,
   loadUsers,
 } = useDashboard();
+
+const { canAccessModule, loadSystemPermissions, permissionLoadState } = usePermissions();
 
 const refreshDashboard = async () => {
   await loadDashboard();
@@ -161,21 +164,20 @@ const {
 );
 
 const navigation = computed<ShellNavItem[]>(() => {
-  const items: ShellNavItem[] = [
-    { label: "Thành viên tổ chức", to: "/organizations/users", icon: Building2 },
-    { label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
-    { label: "Dự án", to: "/projects", icon: FolderKanban },
-    { label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
-    { label: "Nhóm", to: "/teams", icon: Users },
-    { label: "Phân tích", to: "/analytics", icon: BarChart3 },
+  const candidates: Array<ShellNavItem & { moduleKey: string }> = [
+    { moduleKey: "OrganizationMembers", label: "Thành viên tổ chức", to: "/organizations/users", icon: Building2 },
+    { moduleKey: "Dashboard", label: "Tổng quan", to: "/dashboard", icon: LayoutDashboard },
+    { moduleKey: "Projects", label: "Dự án", to: "/projects", icon: FolderKanban },
+    { moduleKey: "Tasks", label: "Nhiệm vụ", to: "/tasks", icon: ClipboardList },
+    { moduleKey: "WorkGroups", label: "Nhóm", to: "/teams", icon: Users },
+    { moduleKey: "Analytics", label: "Phân tích", to: "/analytics", icon: BarChart3 },
+    { moduleKey: "OrganizationManagement", label: "Quản lý tổ chức", to: "/organizations", icon: Building2 },
+    { moduleKey: "ModeratorAssignments", label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck },
+    { moduleKey: "UserManagement", label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck },
   ];
-  const role = String(currentUser.value?.role || "").toLowerCase();
-  if (role === "admin") {
-    items.push({ label: "Quản lý tổ chức", to: "/organizations", icon: Building2 });
-    items.push({ label: "Ủy quyền Moderator", to: "/admin/moderators", icon: ShieldCheck });
-    items.push({ label: "Quản lý người dùng", to: "/admin/users", icon: ShieldCheck });
-  }
-  return items;
+  return candidates
+    .filter(item => canAccessModule(item.moduleKey))
+    .map(({ moduleKey: _moduleKey, ...item }) => item);
 });
 
 const statusColumns = computed(() => taskStatusColumns(selectedProject.value));
@@ -657,6 +659,9 @@ onMounted(async () => {
     loadUsers(),
     loadNotifications(),
   ]);
+  if (permissionLoadState.value !== "loaded") {
+    await loadSystemPermissions();
+  }
   await connectNotifications();
 });
 
@@ -1400,6 +1405,10 @@ provide(dashboardContextKey, {
     :user-role="currentUser?.role ?? null"
     :user-avatar-url="currentUser?.avatarUrl ?? null"
     :user-loading="!currentUserLoaded"
+    :can-access-archived-projects="canAccessModule('Projects')"
+    :can-access-settings="canAccessModule('Settings')"
+    :can-start-simulation="String(currentUser?.role || '').toLowerCase() === 'admin'"
+    :simulation-users="users.map(user => ({ id: user.id, fullName: user.fullName, role: user.systemRole || 'Member' }))"
     @notifications="notificationsOpen = !notificationsOpen"
     @assistant="openChatWithPrompt()"
     @search="openGlobalSearch"

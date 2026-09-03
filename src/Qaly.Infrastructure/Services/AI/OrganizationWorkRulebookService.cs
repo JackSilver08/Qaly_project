@@ -134,7 +134,8 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
             .SingleOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
         if (organization == null) return Result.NotFound();
         var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role) ||
-            await _db.Users.AsNoTracking().AnyAsync(item => item.Id == userId && item.Role == ProjectRoleRules.SystemAdmin, ct);
+            await _db.Users.AsNoTracking().AnyAsync(item =>
+                item.Id == userId && item.IsActive && item.Role == ProjectRoleRules.SystemAdmin, ct);
         var membership = organization.Members.FirstOrDefault(item => item.UserId == userId);
         var readable = isSystemAdmin || organization.OwnerId == userId || membership != null;
         var manageable = isSystemAdmin || organization.OwnerId == userId || OrganizationRoleRules.CanManageOrganization(membership?.Role);

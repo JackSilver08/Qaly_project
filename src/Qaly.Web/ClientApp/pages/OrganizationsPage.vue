@@ -206,7 +206,7 @@ onMounted(load)
           Tạo tổ chức, chỉ định chủ sở hữu và quản lý vòng đời của từng không gian làm việc.
         </p>
       </div>
-      <button type="button" class="primary" :disabled="isInitialLoad || !owners.length" @click="openCreate">
+      <button type="button" class="primary" :disabled="isInitialLoad || !owners.length" :title="isInitialLoad ? 'Đang tải danh sách chủ sở hữu' : !owners.length ? 'Cần ít nhất một tài khoản đang hoạt động; hãy tạo hoặc kích hoạt người dùng tại Quản lý người dùng' : 'Tạo tổ chức mới'" @click="openCreate">
         <Plus :size="18" /> Tạo tổ chức
       </button>
     </header>
@@ -363,7 +363,7 @@ onMounted(load)
         </label>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="editorOpen = false">Hủy</button>
-          <button type="submit" class="primary" :disabled="saving || !form.name || !form.ownerId">
+          <button type="submit" class="primary" :disabled="saving" :title="saving ? 'Đang lưu và đọc lại tổ chức' : 'Điền các trường bắt buộc; trình duyệt sẽ đưa bạn tới trường còn thiếu'">
             {{ saving ? 'Đang lưu...' : editingId ? 'Lưu thay đổi' : 'Tạo và thêm thành viên' }}
           </button>
         </div>

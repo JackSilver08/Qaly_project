@@ -32,24 +32,26 @@ public sealed class ProjectLaunchService : IProjectLaunchService
     {
         if (_currentUser.UserId is not Guid userId)
             return Result.Forbidden<ProjectLaunchAnalysisResultDto>();
+        var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUser.Role);
 
         var organizationSource = executionContext.Sources.FirstOrDefault(
             item => item.SourceId == AiAssistantContextContract.OrganizationSummarySource);
         Guid organizationId = Guid.Empty;
         if (organizationSource == null || !TryOrganizationId(organizationSource, out organizationId))
         {
-            var userOrgId = await _db.OrganizationMembers.AsNoTracking()
-                .Where(m => m.UserId == userId)
-                .Select(m => (Guid?)m.OrganizationId)
-                .FirstOrDefaultAsync(ct)
-                ?? await _db.Organizations.AsNoTracking()
-                    .Where(o => o.IsActive)
-                    .Select(o => (Guid?)o.Id)
-                    .FirstOrDefaultAsync(ct);
+            var readableOrganizationIds = isSystemAdmin
+                ? []
+                : await _db.Organizations.AsNoTracking()
+                    .Where(item => item.IsActive &&
+                        (item.OwnerId == userId || item.Members.Any(member => member.UserId == userId)))
+                    .OrderBy(item => item.Id)
+                    .Select(item => item.Id)
+                    .Take(2)
+                    .ToListAsync(ct);
 
-            if (userOrgId.HasValue && userOrgId.Value != Guid.Empty)
+            if (readableOrganizationIds.Count == 1)
             {
-                organizationId = userOrgId.Value;
+                organizationId = readableOrganizationIds[0];
             }
             else
             {
@@ -61,7 +63,12 @@ public sealed class ProjectLaunchService : IProjectLaunchService
         var organization = await _db.Organizations.AsNoTracking()
             .Include(item => item.Members)
             .Include(item => item.Projects)
-            .SingleOrDefaultAsync(item => item.Id == organizationId && item.IsActive, ct);
+            .SingleOrDefaultAsync(item =>
+                item.Id == organizationId &&
+                item.IsActive &&
+                (isSystemAdmin ||
+                 item.OwnerId == userId ||
+                 item.Members.Any(member => member.UserId == userId)), ct);
         if (organization == null) return Result.NotFound<ProjectLaunchAnalysisResultDto>();
         var organizationSkills = await _db.OrganizationSkills.AsNoTracking()
             .Where(item => item.OrganizationId == organization.Id && item.IsActive)

@@ -72,8 +72,13 @@ public class AuthService : IAuthService
         };
 
         await _userRepo.AddAsync(user, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await TryLogAuditAsync("Create", nameof(User), user.Id.ToString(), new { user.Email, user.Role }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(User),
+            user.Id.ToString(),
+            new { user.Email, user.Role },
+            ct);
 
         return Result.Created(user.ToDto());
     }
@@ -125,8 +130,13 @@ public class AuthService : IAuthService
         user.AvatarUrl = string.IsNullOrWhiteSpace(dto.AvatarUrl) ? null : dto.AvatarUrl.Trim();
 
         await _userRepo.UpdateAsync(user, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await TryLogAuditAsync("Update", nameof(User), user.Id.ToString(), new { user.FullName, user.AvatarUrl }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Update",
+            nameof(User),
+            user.Id.ToString(),
+            new { user.FullName, user.AvatarUrl },
+            ct);
 
         return Result.Success(user.ToDto());
     }
@@ -156,9 +166,13 @@ public class AuthService : IAuthService
 
         user.PasswordHash = HashPassword(dto.NewPassword);
         await _userRepo.UpdateAsync(user, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        await TryLogAuditAsync("ChangePassword", nameof(User), user.Id.ToString(), null, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "ChangePassword",
+            nameof(User),
+            user.Id.ToString(),
+            changes: null,
+            ct: ct);
 
         // Security: Revoke all other sessions after password change
         await RevokeSessionsAsync(userId, ct);
@@ -261,7 +275,8 @@ public class AuthService : IAuthService
         }
         catch
         {
-            // Audit logging must never block authentication or profile updates.
+            // Login and external session-revocation telemetry is best effort; canonical profile writes
+            // stage their audit row in the same database commit instead.
         }
     }
 }

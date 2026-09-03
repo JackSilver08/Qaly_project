@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 
 namespace Qaly.Infrastructure.Services.AI;
@@ -74,20 +76,41 @@ public sealed partial class ProjectLaunchOrchestratorService
     {
         if (!_options.ProjectOperationMonitoringEnabled) return;
         var now = DateTimeOffset.UtcNow;
-        var dueIds = await _db.ProjectLaunchExecutions.AsNoTracking()
+        // Monitoring is an operational read: it must still observe executions whose
+        // Project was soft-deleted so that deletion becomes an explicit replan signal.
+        var dueIds = await _db.ProjectLaunchExecutions.IgnoreQueryFilters().AsNoTracking()
             .Where(item => item.Status == "executed" && item.MonitoringEnabled &&
                 (!item.NextMonitorAt.HasValue || item.NextMonitorAt <= now))
             .OrderBy(item => item.NextMonitorAt)
+            .ThenBy(item => item.Id)
             .Select(item => item.Id)
             .Take(25)
             .ToArrayAsync(ct);
 
         foreach (var executionId in dueIds)
         {
-            var execution = await _db.ProjectLaunchExecutions
-                .Include(item => item.ProjectLaunchPlanArtifact)
-                .SingleOrDefaultAsync(item => item.Id == executionId, ct);
-            if (execution != null) await EvaluateExecutionAsync(execution, null, ct);
+            try
+            {
+                var execution = await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+                    .Include(item => item.ProjectLaunchPlanArtifact)
+                    .SingleOrDefaultAsync(item => item.Id == executionId, ct);
+                if (execution != null) await EvaluateExecutionAsync(execution, null, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                _db.ChangeTracker.Clear();
+                MonitorExecutionChanged(_logger, executionId, exception);
+            }
+            catch (Exception exception)
+            {
+                _db.ChangeTracker.Clear();
+                await DeferFailedMonitorAsync(executionId, now.AddMinutes(30), ct);
+                MonitorExecutionFailed(_logger, executionId, exception);
+            }
         }
     }
 
@@ -333,11 +356,11 @@ public sealed partial class ProjectLaunchOrchestratorService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var overdue = activeTasks.Where(item => item.DueDate < now && !CompletedTaskStates.Contains(item.Status)).ToArray();
+        var overdue = activeTasks.Where(item => TaskStatusRules.IsOverdue(item.Status, item.DueDate, now)).ToArray();
         if (overdue.Length > 0)
             changes.Add(new("tasks_overdue", "critical", $"{overdue.Length} task(s) are overdue.", "0", overdue.Length.ToString(CultureInfo.InvariantCulture), "Review blockers and propose a new dependency-aware schedule; do not silently move due dates."));
 
-        var unassigned = activeTasks.Count(item => !item.AssigneeId.HasValue && !CompletedTaskStates.Contains(item.Status));
+        var unassigned = activeTasks.Count(item => !item.AssigneeId.HasValue && TaskStatusRules.IsOpen(item.Status));
         if (unassigned > 0)
             changes.Add(new("tasks_unassigned", "warning", $"{unassigned} active task(s) have no assignee.", "0", unassigned.ToString(CultureInfo.InvariantCulture), "Propose eligible assignees using current skills, capacity and focus reserve."));
 
@@ -373,7 +396,7 @@ public sealed partial class ProjectLaunchOrchestratorService
             .ToDictionaryAsync(item => item.UserId, ct);
         var commitments = await _db.TaskItems.AsNoTracking()
             .Where(item => item.AssigneeId.HasValue && selectedIds.Contains(item.AssigneeId.Value) &&
-                !item.Project.IsDeleted && !item.IsDeleted && item.Status != "Done" && item.Status != "Completed" &&
+                !item.Project.IsDeleted && !item.IsDeleted && TaskStatusRules.OpenStatuses.Contains(item.Status) &&
                 (!item.StartDate.HasValue || item.StartDate < delivery.EndDate) && (!item.DueDate.HasValue || item.DueDate >= delivery.StartDate))
             .GroupBy(item => item.AssigneeId!.Value)
             .Select(group => new { UserId = group.Key, Hours = group.Sum(item => (decimal)(item.EstimatedHours ?? 8)) })
@@ -404,6 +427,34 @@ public sealed partial class ProjectLaunchOrchestratorService
         }
         return changes;
     }
+
+    private async Task DeferFailedMonitorAsync(Guid executionId, DateTimeOffset retryAt, CancellationToken ct)
+    {
+        if (_db.Database.IsRelational())
+        {
+            await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+                .Where(item => item.Id == executionId && item.Status == "executed" && item.MonitoringEnabled)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.NextMonitorAt, retryAt)
+                    .SetProperty(item => item.UpdatedAt, DateTimeOffset.UtcNow)
+                    .SetProperty(item => item.RowRevision, item => item.RowRevision + 1), ct);
+            return;
+        }
+
+        var execution = await _db.ProjectLaunchExecutions.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(item => item.Id == executionId, ct);
+        if (execution == null || execution.Status != "executed" || !execution.MonitoringEnabled) return;
+        execution.NextMonitorAt = retryAt;
+        execution.UpdatedAt = DateTimeOffset.UtcNow;
+        execution.RowRevision++;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Project launch execution {ExecutionId} changed while a scheduled monitor was running; the newer state wins.")]
+    private static partial void MonitorExecutionChanged(ILogger logger, Guid executionId, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Project launch execution {ExecutionId} could not be monitored and was deferred for retry.")]
+    private static partial void MonitorExecutionFailed(ILogger logger, Guid executionId, Exception exception);
 
     private static Dictionary<Guid, string> BuildExpectedMemberRoles(ProjectStaffingScenarioDto scenario, Guid ownerId)
     {

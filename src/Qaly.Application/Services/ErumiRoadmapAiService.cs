@@ -15,8 +15,6 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
 {
     private static readonly TimeSpan SnapshotRetention = TimeSpan.FromHours(72);
     private static readonly JsonSerializerOptions RoadmapJsonOptions = new() { PropertyNameCaseInsensitive = true };
-    private static readonly string[] ManageProjectRoles = ["owner", "manager", "admin", "projectadmin", "projectmanager", "leader", "techlead"];
-    private static readonly string[] SystemAdminRoles = ["admin", "superadmin", "systemadmin"];
     private static readonly string[] Priorities = ["Low", "Medium", "High", "Critical"];
     private static readonly char[] RoleSeparators = [' ', '/', '-'];
     private static readonly ConcurrentDictionary<Guid, ProposalScope> Proposals = new();
@@ -27,11 +25,12 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
     private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
-    private readonly IRepository<SystemModulePermission> _systemPermRepo;
+    private readonly ISystemModuleAuthorizationService _systemAuthorization;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
     private readonly IAiGateway _aiGateway;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public ErumiRoadmapAiService(
         IRepository<Project> projectRepo,
@@ -42,17 +41,20 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService,
-        IAiGateway aiGateway)
+        IAiGateway aiGateway,
+        IAiNativeAuthorizationService authorization,
+        ISystemModuleAuthorizationService? systemAuthorization = null)
     {
         _projectRepo = projectRepo;
         _sprintRepo = sprintRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
-        _systemPermRepo = systemPermRepo;
+        _systemAuthorization = systemAuthorization ?? new SystemModuleAuthorizationService(systemPermRepo);
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
         _aiGateway = aiGateway;
+        _authorization = authorization;
     }
 
     public async Task<Result<ErumiRoadmapChatResponseDto>> ChatAndProposeRoadmapAsync(
@@ -75,9 +77,9 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
             .Where(x => x.ProjectId == dto.ProjectId).ToListAsync(ct);
         var currentTasks = await _taskRepo.GetQueryable().AsNoTracking()
             .Where(x => x.ProjectId == dto.ProjectId && x.Status != "Cancelled")
-            .OrderBy(x => x.SortOrder).Take(80).ToListAsync(ct);
+            .OrderBy(x => x.SortOrder).ThenBy(x => x.Id).Take(80).ToListAsync(ct);
         var currentSprints = await _sprintRepo.GetQueryable().AsNoTracking()
-            .Where(x => x.ProjectId == dto.ProjectId).OrderBy(x => x.StartDate).Take(30).ToListAsync(ct);
+            .Where(x => x.ProjectId == dto.ProjectId).OrderBy(x => x.StartDate).ThenBy(x => x.Id).Take(30).ToListAsync(ct);
 
         var objective = string.IsNullOrWhiteSpace(dto.ContextSprintName)
             ? dto.UserMessage.Trim()
@@ -238,11 +240,15 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
                 await _taskRepo.AddAsync(task, ct);
                 taskIds.Add(task.Id);
             }
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "ApproveErumiRoadmap",
+                nameof(Sprint),
+                sprint.Id.ToString(),
+                new { dto.SnapshotId, TaskCount = taskIds.Count, ApprovedBy = userId.Value },
+                ct);
             Snapshots[dto.SnapshotId] = new AppliedSnapshot(dto.ProjectId, sprint.Id, taskIds, DateTimeOffset.UtcNow);
             Proposals.TryRemove(dto.SnapshotId, out _);
-            await _auditLogService.LogAsync("ApproveErumiRoadmap", nameof(Sprint), sprint.Id.ToString(),
-                new { dto.SnapshotId, TaskCount = taskIds.Count, ApprovedBy = userId.Value }, ct);
             return Result.Success();
         }
         finally
@@ -271,10 +277,14 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         }
         var sprint = await _sprintRepo.GetByIdAsync(snapshot.SprintId, ct);
         if (sprint != null) await _sprintRepo.DeleteAsync(sprint, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RollbackErumiRoadmap",
+            nameof(Sprint),
+            snapshot.SprintId.ToString(),
+            new { dto.SnapshotId, RolledBackBy = userId.Value },
+            ct);
         Snapshots.TryRemove(dto.SnapshotId, out _);
-        await _auditLogService.LogAsync("RollbackErumiRoadmap", nameof(Sprint), snapshot.SprintId.ToString(),
-            new { dto.SnapshotId, RolledBackBy = userId.Value }, ct);
         return Result.Success();
     }
 
@@ -340,10 +350,12 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
 
     private async Task<Result> ValidateAiReadPermissionAsync(Guid projectId, Guid userId, CancellationToken ct)
     {
-        var role = _currentUserService.Role ?? "User";
-        var permission = await _systemPermRepo.GetQueryable().AsNoTracking()
-            .FirstOrDefaultAsync(x => x.SystemRole == role && x.ModuleKey == "AiHub", ct);
-        if (permission is { IsAllowed: false })
+        var permission = await _systemAuthorization.ResolveAsync(
+            userId,
+            _currentUserService.Role,
+            SystemModulePermissionRules.AiHub,
+            ct);
+        if (!permission.IsAllowed || permission.AiTier == AiNativeSystemTier.Restricted)
             return Result.Failure("Tài khoản của bạn đã bị giới hạn quyền sử dụng AI Hub.", 403);
         var project = await _projectRepo.GetByIdAsync(projectId, ct);
         if (project == null) return Result.NotFound("Không tìm thấy dự án.");
@@ -383,21 +395,19 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
 
     private async Task<bool> CanReadProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (project.OwnerId == userId || IsSystemAdmin()) return true;
-        return await _memberRepo.GetQueryable().AnyAsync(x => x.ProjectId == project.Id && x.UserId == userId, ct);
+        var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUserService.Role, ct);
+        return systemTier != AiNativeSystemTier.Restricted &&
+            (await _authorization.ResolveProjectAsync(project, userId, IsSystemAdmin(), ct)).CanRead;
     }
 
     private async Task<bool> CanManageProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (project.OwnerId == userId || IsSystemAdmin()) return true;
-        var role = await _memberRepo.GetQueryable().Where(x => x.ProjectId == project.Id && x.UserId == userId)
-            .Select(x => x.Role).FirstOrDefaultAsync(ct);
-        return role != null && ManageProjectRoles
-            .Any(x => role.Replace(" ", string.Empty).Equals(x, StringComparison.OrdinalIgnoreCase));
+        var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUserService.Role, ct);
+        return systemTier == AiNativeSystemTier.Full &&
+            (await _authorization.ResolveProjectAsync(project, userId, IsSystemAdmin(), ct)).CanManage;
     }
 
-    private bool IsSystemAdmin() => SystemAdminRoles.Contains(
-        (_currentUserService.Role ?? string.Empty).Replace(" ", string.Empty), StringComparer.OrdinalIgnoreCase);
+    private bool IsSystemAdmin() => ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
 
     private static string? BuildFastActionPrompt(string actionType, string? custom)
     {

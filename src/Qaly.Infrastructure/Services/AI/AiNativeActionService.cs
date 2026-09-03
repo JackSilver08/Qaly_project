@@ -426,17 +426,28 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
             .OrderBy(item => item.OrganizationSkill.Name)
             .Select(item => new RequiredSkillOption(item.OrganizationSkillId, item.OrganizationSkill.Name))
             .ToList();
-        if (requiredSkills.Count == 0 && task.Project.OrganizationId.HasValue)
+        var availableSkills = requiredSkills.ToList();
+        if (task.Project.OrganizationId.HasValue)
         {
-            requiredSkills = await _db.OrganizationSkills.AsNoTracking()
+            availableSkills = await _db.OrganizationSkills.AsNoTracking()
                 .Where(item => item.OrganizationId == task.Project.OrganizationId.Value && item.IsActive)
                 .OrderBy(item => item.Name)
-                .Take(Math.Max(1, count))
+                .ThenBy(item => item.Id)
                 .Select(item => new RequiredSkillOption(item.Id, item.Name))
                 .ToListAsync(ct);
         }
+        if (requiredSkills.Count == 0)
+            requiredSkills = availableSkills.Take(Math.Max(1, count)).ToList();
         var subtasks = BuildSubtasks(task, request.Message, count, requiredSkills);
-        var payload = new AiNativeBreakdownPayloadDto(task.Id, task.Title, subtasks, $"/projects/{task.ProjectId}/tasks/{task.Id}");
+        var skillOptions = availableSkills
+            .Select(item => new AiNativeBreakdownSkillOptionDto(item.SkillId, item.Name))
+            .ToArray();
+        var payload = new AiNativeBreakdownPayloadDto(
+            task.Id,
+            task.Title,
+            subtasks,
+            $"/projects/{task.ProjectId}/tasks/{task.Id}",
+            skillOptions);
         return Prepared(permission.CanManage, permission.CanManage ? null : "Project Manager permission is required.",
             task.ProjectId, task.Project.OrganizationId, AiNativeDomainActionContract.BreakdownSchemaId,
             "task", task.Id, JsonSerializer.Serialize(payload, JsonOptions),
@@ -558,6 +569,7 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
         var taskOptions = await _db.TaskItems.AsNoTracking()
             .Where(item => item.ProjectId == meeting.ProjectId && !item.IsDeleted)
             .OrderByDescending(item => item.UpdatedAt ?? item.CreatedAt)
+            .ThenBy(item => item.Id)
             .Take(50)
             .Select(item => new AiNativeMeetingTaskOptionDto(item.Id, item.Title))
             .ToListAsync(ct);
@@ -820,7 +832,28 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
                 {
                     PollId = poll.Id, Content = text.Trim(), SortOrder = index
                 }).ToList();
+                var pollMessageContent = string.Join('\n', new[]
+                {
+                    $"[poll] {poll.Question}",
+                    $"[pollid] {poll.Id}"
+                }.Concat(poll.Options.OrderBy(item => item.SortOrder)
+                    .Select((option, index) => $"{index + 1}. {option.Content}")));
+                if (pollMessageContent.Length > 4000)
+                    return Result.Failure<IReadOnlyList<AiNativeActionReceiptItemDto>>(
+                        "Poll is too large to publish in group chat. Shorten the question or options.",
+                        400,
+                        "poll_message_too_large");
                 _db.GroupPolls.Add(poll);
+                _db.GroupMessages.Add(new GroupMessage
+                {
+                    WorkGroupId = payload.GroupId,
+                    UserId = userId,
+                    Content = pollMessageContent,
+                    MessageType = "Poll"
+                });
+                // The Poll and its visible Group card are one canonical business
+                // operation. The surrounding native-action transaction makes this
+                // SaveChanges atomic with the draft receipt.
                 await _db.SaveChangesAsync(ct);
                 result.Add(new AiNativeActionReceiptItemDto("group_poll", poll.Id, poll.Question,
                     $"/groups/{poll.GroupId}/polls/{poll.Id}"));
@@ -1202,10 +1235,15 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
 
     private static PayloadValidation ValidateBreakdown(AiNativeBreakdownPayloadDto? value, Guid targetId)
         => value == null || value.ParentTaskId != targetId || value.Subtasks.Count is < 1 or > 20 ||
+           value.SkillOptions is { Count: > 100 } ||
+           value.SkillOptions?.Any(option => option.SkillId == Guid.Empty || string.IsNullOrWhiteSpace(option.Name) || option.Name.Length > 200) == true ||
+           value.SkillOptions?.Select(option => option.SkillId).Distinct().Count() != value.SkillOptions?.Count ||
            value.Subtasks.Any(item => string.IsNullOrWhiteSpace(item.Title) || item.Title.Trim().Length > 300 ||
                item.Description?.Length > 8000 || item.EstimatedHours is < 0 or > 10000 ||
                item.RequiredSkillId.HasValue != !string.IsNullOrWhiteSpace(item.RequiredSkillName) ||
                item.RequiredSkillName?.Length > 200 ||
+               item.RequiredSkillId.HasValue && value.SkillOptions is { Count: > 0 } &&
+                   value.SkillOptions.All(option => option.SkillId != item.RequiredSkillId.Value) ||
                !ValidTaskPriorities.Contains(item.Priority)) ||
            value.Subtasks.Select(item => item.Title.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != value.Subtasks.Count
             ? PayloadValidation.Invalid("Breakdown must contain 1-20 valid subtasks for the reviewed Task.") : PayloadValidation.Valid();
@@ -1247,7 +1285,8 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
 
     private static PayloadValidation ValidateDigest(AiNativeDigestPayloadDto? value, Guid targetId)
         => value == null || value.ProjectId != targetId || value.DayOfWeek is < 0 or > 6 ||
-           value.LocalTimeMinutes is < 0 or >= 1440 || string.IsNullOrWhiteSpace(value.TimeZoneId) || !IsKnownTimeZone(value.TimeZoneId)
+           value.LocalTimeMinutes is < 0 or >= 1440 || string.IsNullOrWhiteSpace(value.TimeZoneId) || !IsKnownTimeZone(value.TimeZoneId) ||
+           !string.Equals(value.DeliveryChannel, "email", StringComparison.OrdinalIgnoreCase)
             ? PayloadValidation.Invalid("Digest schedule is invalid.") : PayloadValidation.Valid();
 
     private static PayloadValidation ValidateMeetingActions(AiNativeMeetingActionsPayloadDto? value, Guid targetId)
@@ -1266,6 +1305,7 @@ public sealed partial class AiNativeActionService : IAiNativeActionService
     private static PayloadValidation ValidateRoadmapAdjustment(AiNativeRoadmapAdjustmentPayloadDto? value, Guid targetId)
         => value == null || value.ProjectId != targetId || string.IsNullOrWhiteSpace(value.Summary) ||
            value.Adjustments.Count is < 1 or > 20 ||
+           value.Adjustments.All(item => !item.Selected) ||
            value.Adjustments.Any(item => string.IsNullOrWhiteSpace(item.SprintName) || item.SprintName.Length > 200 ||
                item.AfterEnd <= item.AfterStart || item.BeforeEnd <= item.BeforeStart ||
                string.IsNullOrWhiteSpace(item.Reason) || item.Reason.Length > 2000) ||

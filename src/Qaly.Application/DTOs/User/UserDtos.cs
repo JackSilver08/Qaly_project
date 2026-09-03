@@ -9,6 +9,19 @@ public record UserDto(
     string? AvatarUrl,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// A collaborator-directory entry. System access role and account creation metadata
+/// are intentionally omitted: membership pickers do not need platform-administration
+/// data, and exposing it would widen the tenant boundary.
+/// </summary>
+public record UserDirectoryDto(
+    Guid Id,
+    string FullName,
+    string Email,
+    bool IsActive,
+    string? AvatarUrl,
+    string? SystemRole = null);
+
 public record RegisterDto(
     string FullName,
     string Email,

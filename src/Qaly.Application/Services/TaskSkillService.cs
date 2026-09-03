@@ -82,6 +82,7 @@ public sealed class TaskSkillService : ITaskSkillService
         var skills = await query
             .OrderByDescending(skill => skill.IsActive)
             .ThenBy(skill => skill.Name)
+            .ThenBy(skill => skill.Id)
             .Take(200)
             .ToListAsync(ct);
 
@@ -132,7 +133,13 @@ public sealed class TaskSkillService : ITaskSkillService
         await _skillRepo.AddAsync(skill, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "CreateOrganizationSkill",
+                nameof(OrganizationSkill),
+                skill.Id.ToString(),
+                new { skill.OrganizationId, skill.Name, skill.NormalizedName },
+                ct);
         }
         catch (DbUpdateException)
         {
@@ -141,13 +148,6 @@ public sealed class TaskSkillService : ITaskSkillService
                 409,
                 AiErrorCodes.SkillCatalogConflict);
         }
-
-        await _auditLogService.LogAsync(
-            "CreateOrganizationSkill",
-            nameof(OrganizationSkill),
-            skill.Id.ToString(),
-            new { skill.OrganizationId, skill.Name, skill.NormalizedName },
-            ct);
 
         return Result.Created(ToDto(skill));
     }
@@ -211,7 +211,13 @@ public sealed class TaskSkillService : ITaskSkillService
         await _skillRepo.UpdateAsync(skill, ct);
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "UpdateOrganizationSkill",
+                nameof(OrganizationSkill),
+                skill.Id.ToString(),
+                new { before, after = new { skill.Name, skill.Description, skill.Category, skill.AliasesJson, skill.DefaultRequiredLevel, skill.IsActive } },
+                ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -227,13 +233,6 @@ public sealed class TaskSkillService : ITaskSkillService
                 409,
                 AiErrorCodes.SkillCatalogConflict);
         }
-
-        await _auditLogService.LogAsync(
-            "UpdateOrganizationSkill",
-            nameof(OrganizationSkill),
-            skill.Id.ToString(),
-            new { before, after = new { skill.Name, skill.Description, skill.Category, skill.AliasesJson, skill.DefaultRequiredLevel, skill.IsActive } },
-            ct);
 
         return Result.Success(ToDto(skill));
     }
@@ -359,7 +358,18 @@ public sealed class TaskSkillService : ITaskSkillService
         task.UpdatedAt = now;
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "ReplaceTaskSkills",
+                nameof(TaskItem),
+                task.Id.ToString(),
+                new
+                {
+                    task.ProjectId,
+                    before,
+                    after = normalizedSelections.Select(item => new { item.SkillId, RequiredLevel = item.Level })
+                },
+                ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -375,18 +385,6 @@ public sealed class TaskSkillService : ITaskSkillService
                 409,
                 AiErrorCodes.SkillCatalogConflict);
         }
-
-        await _auditLogService.LogAsync(
-            "ReplaceTaskSkills",
-            nameof(TaskItem),
-            task.Id.ToString(),
-            new
-            {
-                task.ProjectId,
-                before,
-                after = normalizedSelections.Select(item => new { item.SkillId, RequiredLevel = item.Level })
-            },
-            ct);
 
         var reloaded = await LoadTaskAsync(taskId, tracking: false, ct);
         var canManageCatalog = await CanManageOrganizationAsync(task.Project.OrganizationId.Value, ct);

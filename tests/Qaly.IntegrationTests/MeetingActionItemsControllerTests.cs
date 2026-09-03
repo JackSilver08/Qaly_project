@@ -191,6 +191,49 @@ public class MeetingActionItemsControllerTests : IClassFixture<IntegrationTestFa
     }
 
     [Fact]
+    public async Task MeetingActionItems_WhenUserIsOutsideProject_DeniesReadLinkAndCreateWithoutMutation()
+    {
+        var seed = await SeedMeetingImportAsync();
+        var existingTaskId = await SeedTaskAsync(seed.ProjectId, "Protected existing task");
+        var outsiderId = Guid.NewGuid();
+        await EnsureUserExists(outsiderId, "Meeting outsider", $"meeting-outside-{Guid.NewGuid():N}@qaly.dev");
+
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", outsiderId.ToString());
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
+
+        var readResponse = await client.GetAsync($"/api/meetings/{seed.MeetingImportId}/action-items");
+        using var linkRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/meetings/{seed.MeetingImportId}/action-items/0/link-task")
+        {
+            Content = JsonContent.Create(new LinkMeetingActionItemTaskRequest(existingTaskId))
+        };
+        linkRequest.Headers.Add("X-CSRF-TOKEN", csrf);
+        var linkResponse = await client.SendAsync(linkRequest);
+
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/meetings/{seed.MeetingImportId}/action-items/0/create-task")
+        {
+            Content = JsonContent.Create(new MeetingActionItemCreateRequest(null, null, null, null, null, null))
+        };
+        createRequest.Headers.Add("X-CSRF-TOKEN", csrf);
+        var createResponse = await client.SendAsync(createRequest);
+
+        readResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        linkResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var db = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.MeetingActionItemMappings.CountAsync(item => item.MeetingImportId == seed.MeetingImportId))
+            .Should().Be(0);
+        (await db.TaskItems.CountAsync(item => item.ProjectId == seed.ProjectId))
+            .Should().Be(1);
+    }
+
+    [Fact]
     public async Task CreateTaskFromActionItem_CreatesTaskAndMappingTrace()
     {
         var seed = await SeedMeetingImportAsync();

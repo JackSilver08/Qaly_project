@@ -171,7 +171,21 @@ public sealed class MemberSkillEvidenceService : IMemberSkillEvidenceService
         task.UpdatedAt = now;
         try
         {
-            await _unitOfWork.SaveChangesAsync(ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _audit,
+                "ConfirmTaskCompletionContributors",
+                nameof(TaskCompletionAttribution),
+                task.Id.ToString(),
+                new
+                {
+                    task.ProjectId,
+                    TaskRowVersion = EncodeRowVersion(task.RowVersion),
+                    ConfirmationNote = Trim(dto.ConfirmationNote, 500),
+                    Before = before,
+                    ContributorUserIds = selected.OrderBy(id => id).ToArray(),
+                    EvidenceMethodVersion
+                },
+                ct);
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -180,21 +194,6 @@ public sealed class MemberSkillEvidenceService : IMemberSkillEvidenceService
                 409,
                 AiErrorCodes.TaskSkillConcurrencyConflict);
         }
-
-        await _audit.LogAsync(
-            "ConfirmTaskCompletionContributors",
-            nameof(TaskCompletionAttribution),
-            task.Id.ToString(),
-            new
-            {
-                task.ProjectId,
-                TaskRowVersion = EncodeRowVersion(task.RowVersion),
-                ConfirmationNote = Trim(dto.ConfirmationNote, 500),
-                Before = before,
-                ContributorUserIds = selected.OrderBy(id => id).ToArray(),
-                EvidenceMethodVersion
-            },
-            ct);
 
         var reloaded = await LoadTaskAsync(taskId, tracking: false, ct);
         return Result.Success(ToTaskAttributionsDto(reloaded!, canManage: true, currentUserId));
@@ -246,8 +245,8 @@ public sealed class MemberSkillEvidenceService : IMemberSkillEvidenceService
         attribution.Status = TaskCompletionAttribution.CorrectionRequested;
         attribution.CorrectionReason = reason;
         attribution.CorrectionRequestedAt = DateTimeOffset.UtcNow;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _audit.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _audit,
             "RequestTaskCompletionAttributionCorrection",
             nameof(TaskCompletionAttribution),
             attribution.Id.ToString(),
@@ -297,6 +296,7 @@ public sealed class MemberSkillEvidenceService : IMemberSkillEvidenceService
                 !item.TaskItem.IsDeleted &&
                 item.TaskItem.Project.OrganizationId == organizationId)
             .OrderByDescending(item => item.CompletedAt)
+            .ThenBy(item => item.Id)
             .Take(500)
             .ToListAsync(ct);
 

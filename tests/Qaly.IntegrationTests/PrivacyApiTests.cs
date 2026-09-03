@@ -178,6 +178,44 @@ public sealed class PrivacyApiTests : IClassFixture<IntegrationTestFactory>
         requests.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task Health_ExposesOverdueDataSubjectRequestAndExpiredLeaseSignals()
+    {
+        var projectId = await SeedProjectAsync();
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.DataSubjectRequests.Add(new DataSubjectRequest
+            {
+                TenantId = projectId,
+                ProjectId = projectId,
+                RequesterUserId = _factory.TestUserId,
+                SubjectUserId = _factory.TestUserId,
+                RequestType = DataSubjectRequestTypes.Export,
+                ScopeJson = "{\"scope\":\"project\"}",
+                Status = DataSubjectRequestStatuses.Collecting,
+                RequestedAt = now.AddDays(-31),
+                AvailableAt = now.AddDays(-31),
+                DeadlineAt = now.AddDays(-1),
+                LeaseOwner = "expired-api-worker",
+                LeaseExpiresAt = now.AddMinutes(-5)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var adminClient = _factory.CreateClient();
+        adminClient.DefaultRequestHeaders.Add("X-Test-Role", ProjectRoleRules.SystemAdmin);
+
+        var response = await adminClient.GetAsync("/api/privacy/health");
+        var health = (await response.Content.ReadFromJsonAsync<ApiResult<PrivacyHealthDto>>(JsonOptions))!.Data!;
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        health.ExpiredLeases.Should().BeGreaterThan(0);
+        health.OverdueDataSubjectRequests.Should().BeGreaterThan(0);
+        health.Status.Should().NotBe("healthy");
+    }
+
     private async Task<Guid> SeedProjectAsync()
     {
         using var scope = _factory.Services.CreateScope();

@@ -76,8 +76,11 @@ test('P16-P17 live natural prompts render editable typed review cards instead of
   expect(p17.nativeActionDraft?.payload?.subtasks).toHaveLength(4)
   const p17Card = assistant.getByTestId('native-action-draft').last()
   await expect(p17Card).toContainText('Tách task thành các subtask')
+  await expect(p17Card).toContainText(`Đích: ${task.title}`)
   await expect(p17Card.locator('.native-action-editor > label')).toHaveCount(4)
   await expect(p17Card).toContainText('Kỹ năng bắt buộc')
+  await expect(p17Card.getByRole('combobox').last()).toBeEditable()
+  await expect(p17Card.getByRole('combobox').last().locator('option')).not.toHaveCount(0)
   await expect(p17Card.getByTestId('native-action-save')).toBeVisible()
   await expect(p17Card.getByTestId('native-action-confirm')).toBeVisible()
 })
@@ -99,14 +102,14 @@ const matrix = [
   {
     capabilityId: 'group.poll.create.v1',
     title: 'Poll của nhóm',
-    payload: { question: 'Chọn phương án triển khai?', options: ['A', 'B', 'C', 'D'], allowMultiple: false, expiredAt: '2026-09-02T09:00' },
+    payload: { question: 'Chọn phương án triển khai?', options: ['A', 'B', 'C', 'D'], allowMultiple: false, expiredAt: new Date(Date.now() + 3 * 86_400_000).toISOString() },
   },
   {
     capabilityId: 'meeting.actions.review.v1',
     title: 'Quyết định và action item cuộc họp',
     payload: {
       summary: 'Cuộc họp thống nhất bước tiếp theo.', decisions: ['Phát hành theo giai đoạn'], blockers: ['Thiếu QA'],
-      actionItems: [{ itemIndex: 0, title: 'Chuẩn bị QA handoff', mappingMode: 'none', existingTaskId: null, description: 'Chuẩn bị dữ liệu QA.', sourceEvidence: 'Đoạn transcript 01' }],
+      actionItems: [{ itemIndex: 0, title: 'Chuẩn bị QA handoff', mappingMode: 'none', existingTaskId: null, description: 'Chuẩn bị dữ liệu QA.', priority: 'High', sourceEvidence: 'Đoạn transcript 01' }],
       existingTaskOptions: [{ taskId: targetId, title: 'Task hiện có' }],
     },
   },
@@ -183,7 +186,126 @@ test('P18-P24 each use a structured review card with editable/selectable control
   await expect(cards.nth(1).locator('input')).not.toHaveCount(0)
   await expect(cards.nth(2).locator('select')).not.toHaveCount(0)
   await expect(cards.nth(3).getByText('Áp dụng điều chỉnh này')).toBeVisible()
+  await expect(cards.nth(3).getByRole('textbox', { name: 'Lý do điều chỉnh' })).toBeEditable()
   await expect(cards.nth(4).locator('select')).not.toHaveCount(0)
+  await expect(cards.nth(4).getByRole('textbox', { name: 'Kênh gửi' })).toHaveValue('Email tới địa chỉ tài khoản')
   await expect(cards.nth(5).getByText('Thành viên kiểm thử')).toBeVisible()
   await expect(cards.nth(6).getByTestId('native-action-confirm')).toBeVisible()
+  await expect(cards.nth(6).getByRole('alert')).toContainText('Tick ít nhất một điều chỉnh Sprint muốn áp dụng')
+  await expect(cards.nth(6).getByTestId('native-action-confirm')).toBeDisabled()
+})
+
+const readOnlySessionId = '40000000-0000-0000-0000-000000000001'
+const readOnlyProjectId = '40000000-0000-0000-0000-000000000002'
+const readOnlyTaskId = '40000000-0000-0000-0000-000000000003'
+
+function p25ToP27Session() {
+  const now = new Date().toISOString()
+  const commonAnswer = {
+    charts: [], files: [], sources: ['Project', 'Task', 'Wiki'], sourceRefs: [], confidence: 0.95,
+    confidenceReason: 'Canonical server data', freshness: now, usedAi: false, latencyMs: 12,
+    model: { id: 'qaly-native', label: 'Qaly / qaly-native', provider: 'Qaly', status: 'system_owned' },
+  }
+  const responses = [
+    {
+      intent: 'member_read_only_project_summary',
+      answer: {
+        ...commonAnswer,
+        reply: 'Phân tích Project trong phạm vi chỉ xem; không có thao tác mutation.',
+        intent: 'member_read_only_project_summary',
+        metrics: [{ label: 'Task quá hạn', value: '2', tone: 'danger' }],
+        tables: [{ title: 'Ba việc nên làm', columns: [{ key: 'action', label: 'Việc nên làm' }], rows: [{ action: 'Rà Task được giao' }, { action: 'Đọc Wiki' }, { action: 'Theo dõi Sprint' }] }],
+        actions: [
+          { type: 'assistant_navigation', label: 'Mở tổng quan dự án', payload: { route: `/projects/${readOnlyProjectId}`, description: 'Mở Project đang được phân tích.' }, requiresConfirmation: false },
+          { type: 'assistant_navigation', label: 'Mở Task nguồn', payload: { route: `/projects/${readOnlyProjectId}?tab=tasks`, description: 'Mở Task theo đúng quyền.' }, requiresConfirmation: false },
+          { type: 'assistant_navigation', label: 'Mở Wiki dự án', payload: { route: `/projects/${readOnlyProjectId}?tab=wiki`, description: 'Mở Wiki theo đúng quyền.' }, requiresConfirmation: false },
+        ],
+      },
+    },
+    {
+      intent: 'project_summary',
+      answer: {
+        ...commonAnswer,
+        reply: 'Provider ngoài không phản hồi; Qaly vẫn đọc nguồn canonical và đưa ra bước tiếp theo an toàn.',
+        intent: 'project_summary', metrics: [], tables: [],
+        actions: [{ type: 'assistant_navigation', label: 'Mở Project nguồn', payload: { route: `/projects/${readOnlyProjectId}`, description: 'Kiểm tra dữ liệu canonical.' }, requiresConfirmation: false }],
+        model: { id: 'qaly-native', label: 'Qaly / qaly-native', provider: 'Qaly', status: 'server_fallback' },
+      },
+    },
+    {
+      intent: 'project_renderer_navigation',
+      answer: {
+        ...commonAnswer,
+        reply: 'Ba bảng ngắn từ dữ liệu canonical, mỗi dòng mở đúng đối tượng.',
+        intent: 'project_renderer_navigation',
+        metrics: [
+          { label: 'Task quá hạn', value: '3', tone: 'danger' },
+          { label: 'Thành viên tải cao', value: '3', tone: 'warning' },
+          { label: 'Sprint có nguy cơ', value: '1', tone: 'danger' },
+        ],
+        tables: [
+          {
+            title: 'Ba Task quá hạn', columns: [{ key: 'title', label: 'Task' }, { key: 'dueDate', label: 'Hạn chót' }],
+            rows: [{ title: 'Task quá hạn 1', dueDate: '01/09/2026', route: `/projects/${readOnlyProjectId}/tasks/${readOnlyTaskId}` }],
+            rowAction: { label: 'Mở Task' },
+          },
+          {
+            title: 'Ba thành viên có tải cao nhất', columns: [{ key: 'member', label: 'Thành viên' }, { key: 'openTasks', label: 'Task mở' }],
+            rows: [{ member: 'Member demo', openTasks: 5, route: `/projects/${readOnlyProjectId}?tab=members` }],
+            rowAction: { label: 'Mở thành viên' },
+          },
+          {
+            title: 'Sprint có nguy cơ', columns: [{ key: 'name', label: 'Sprint' }, { key: 'risk', label: 'Tín hiệu' }],
+            rows: [{ name: 'Sprint demo', risk: 'Đang có nguy cơ', route: `/projects/${readOnlyProjectId}#milestone-${readOnlyTaskId}` }],
+            rowAction: { label: 'Mở Sprint' },
+          },
+        ],
+        actions: [],
+      },
+    },
+  ]
+  return {
+    sessionId: readOnlySessionId, title: 'P25-P27 role fallback renderer', status: 'active', version: 3,
+    projectId: readOnlyProjectId, createdAt: now, updatedAt: now,
+    turns: responses.map((item, index) => ({
+      turnId: `41000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}`,
+      sequence: index + 1,
+      clientTurnId: `42000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}`,
+      userMessage: `P${index + 25}`,
+      status: 'completed', correlationId: `p${index + 25}-ui`, createdAt: now, completedAt: now,
+      processEvents: [{ sequence: 1, stage: 'canonical_read', status: 'completed', publicLabel: 'Đọc dữ liệu canonical', startedAt: now, completedAt: now }],
+      response: {
+        schemaId: 'assistant_turn.v1', disposition: 'grounded_answer', intent: item.intent,
+        executionPolicy: 'read_only', assistantMessage: item.answer.reply, confidence: 0.95,
+        clarification: null, artifact: null, sourceRefs: [`/projects/${readOnlyProjectId}`], answer: item.answer,
+        sessionId: readOnlySessionId,
+        turnId: `41000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}`,
+        clientTurnId: `42000000-0000-0000-0000-${String(index + 1).padStart(12, '0')}`,
+        sequence: index + 1, sessionVersion: index + 1, turnStatus: 'completed', correlationId: `p${index + 25}-ui`, replayed: false,
+        processEvents: [{ sequence: 1, stage: 'canonical_read', status: 'completed', publicLabel: 'Đọc dữ liệu canonical', startedAt: now, completedAt: now }],
+        capabilities: [], sourceDisclosures: [], conversation: null, actualProvider: 'Qaly', actualModel: 'qaly-native', nativeActionDraft: null,
+      },
+    })),
+  }
+}
+
+test('P25-P27 render read-only navigation, honest fallback and bounded row actions', async ({ page }) => {
+  await login(page)
+  const session = p25ToP27Session()
+  await page.route('**/api/ai/assistant/sessions/recent', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session) }))
+  await page.route(`**/api/ai/assistant/sessions/${readOnlySessionId}`, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(session) }))
+  await page.evaluate(id => window.localStorage.setItem('qaly.ai-native.active-session.v1', id), readOnlySessionId)
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  const assistant = await openAssistant(page)
+
+  await expect(assistant.getByTestId('native-action-draft')).toHaveCount(0)
+  await expect(assistant.getByRole('button', { name: /Mở Wiki dự án/ })).toBeVisible()
+  await expect(assistant.getByText('Fallback server')).toBeVisible()
+  await expect(assistant.getByRole('table', { name: 'Ba Task quá hạn' })).toBeVisible()
+  await expect(assistant.getByRole('table', { name: 'Ba thành viên có tải cao nhất' })).toBeVisible()
+  await expect(assistant.getByRole('table', { name: 'Sprint có nguy cơ' })).toBeVisible()
+  await expect(assistant.locator('details.assistant-process-disclosure').last()).not.toHaveAttribute('open', '')
+
+  await assistant.getByRole('table', { name: 'Ba Task quá hạn' }).getByRole('button', { name: 'Mở Task' }).click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${readOnlyProjectId}/tasks/${readOnlyTaskId}$`))
 })

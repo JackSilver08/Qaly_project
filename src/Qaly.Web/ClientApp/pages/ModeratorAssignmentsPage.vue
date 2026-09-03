@@ -15,13 +15,15 @@ const capabilityOptions=[
   ['organization.users.invite','Thêm thành viên'],
   ['organization.users.update_role','Cập nhật vai trò'],
   ['organization.users.remove','Gỡ thành viên'],
+  ['organization.professional_profiles.view','Xem hồ sơ nghề nghiệp'],
+  ['organization.professional_profiles.manage','Quản lý hồ sơ nghề nghiệp'],
 ] as const
 const moderators=ref<AdminUser[]>([]), organizations=ref<Organization[]>([]), assignments=ref<Assignment[]>([])
 const loading=ref(true), saving=ref(false), grantOpen=ref(false)
 const form=ref({moderatorUserId:'',organizationId:'',capabilities:capabilityOptions.map(item=>item[0]),expiresAt:''})
 const activeAssignments=computed(()=>assignments.value.filter(item=>item.isActive&&!item.revokedAt&&(!item.expiresAt||new Date(item.expiresAt)>new Date())))
 async function load(){loading.value=true;try{const [users,orgs,scopes]=await Promise.all([apiJson<UserPage>('/api/admin/users?role=Moderator&pageSize=100'),apiResult<OrganizationPage>('/api/organizations?pageSize=100'),apiJson<Assignment[]>('/api/admin/moderator-assignments')]);moderators.value=users.items;organizations.value=orgs.items;assignments.value=scopes;if(!form.value.moderatorUserId&&moderators.value.length)form.value.moderatorUserId=moderators.value[0].id;if(!form.value.organizationId&&organizations.value.length)form.value.organizationId=organizations.value[0].id}catch(e){showError(errorMessage(e,'Không thể tải phạm vi Moderator.'))}finally{loading.value=false}}
-async function grant(){if(!form.value.moderatorUserId||!form.value.organizationId||!form.value.capabilities.length)return;saving.value=true;try{await apiCommand('/api/admin/moderator-assignments',{method:'POST',body:JSON.stringify({...form.value,expiresAt:form.value.expiresAt?new Date(form.value.expiresAt).toISOString():null})});grantOpen.value=false;showSuccess('Đã cấp phạm vi cho Moderator.');await load()}catch(e){showError(errorMessage(e,'Không thể cấp phạm vi.'))}finally{saving.value=false}}
+async function grant(){if(!form.value.moderatorUserId||!form.value.organizationId){showError('Hãy chọn Moderator và tổ chức cần hỗ trợ.');return}if(!form.value.capabilities.length){showError('Chọn ít nhất một capability; Qaly không cấp phạm vi rỗng hoặc quyền ngầm định.');return}saving.value=true;try{await apiCommand('/api/admin/moderator-assignments',{method:'POST',body:JSON.stringify({...form.value,expiresAt:form.value.expiresAt?new Date(form.value.expiresAt).toISOString():null})});grantOpen.value=false;showSuccess('Đã cấp phạm vi cho Moderator.');await load()}catch(e){showError(errorMessage(e,'Không thể cấp phạm vi.'))}finally{saving.value=false}}
 async function revoke(item:Assignment){if(!await confirmDialog({tone:'critical',title:'Thu hồi quyền Moderator?',subject:item.moderatorName,message:`Quyền tại ${item.organizationName} sẽ ngừng hiệu lực ngay.`,confirmLabel:'Thu hồi quyền'}))return;try{await apiCommand(`/api/admin/moderator-assignments/${item.id}`,{method:'DELETE'});showSuccess('Đã thu hồi quyền Moderator.');await load()}catch(e){showError(errorMessage(e,'Không thể thu hồi quyền.'))}}
 function capabilityLabel(value:string){return capabilityOptions.find(item=>item[0]===value)?.[1]??value}
 function dateLabel(value?:string|null){return value?new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'Không hết hạn'}
@@ -36,7 +38,7 @@ onMounted(load)
         <h1>Ủy quyền Moderator</h1>
         <p>Moderator chỉ nhận đúng capability, tổ chức và thời hạn được cấp. Không assignment nào cấp quyền toàn hệ thống.</p>
       </div>
-      <button type="button" class="primary" :disabled="!moderators.length || !organizations.length" @click="grantOpen = true">
+      <button type="button" class="primary" :disabled="!moderators.length || !organizations.length" :title="!moderators.length ? 'Cần một tài khoản có System role Moderator; mở Quản lý người dùng để tạo hoặc đổi role' : !organizations.length ? 'Cần tạo ít nhất một tổ chức trước khi ủy quyền' : 'Cấp capability theo tổ chức và thời hạn'" @click="grantOpen = true">
         <Plus :size="18" /> Cấp phạm vi
       </button>
     </header>
@@ -97,7 +99,7 @@ onMounted(load)
         </label>
         <div class="actions">
           <button type="button" class="secondary" @click="grantOpen = false">Hủy</button>
-          <button type="submit" class="primary" :disabled="saving || !form.capabilities.length">Cấp quyền</button>
+          <button type="submit" class="primary" :disabled="saving" :title="saving ? 'Đang lưu và đọc lại assignment' : !form.capabilities.length ? 'Chọn ít nhất một capability; bấm để nhận hướng dẫn' : 'Cấp đúng các capability đã chọn'">Cấp quyền</button>
         </div>
       </form>
     </div>

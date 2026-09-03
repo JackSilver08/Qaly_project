@@ -12,6 +12,50 @@ namespace Qaly.IntegrationTests;
 public sealed class PrivacyWorkStoreSqlServerTests
 {
     [Fact]
+    public async Task ClaimNextAsync_WhenRetentionAndDsarAreDue_PrioritizesStatutoryDsar()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        await database.SeedRetentionActionAsync();
+        var requestId = await database.SeedDataSubjectRequestAsync(
+            deadlineAt: DateTimeOffset.UtcNow.AddDays(2));
+
+        await using var context = database.CreateContext();
+        var lease = await database.CreateStore(context)
+            .ClaimNextAsync("privacy-priority", TimeSpan.FromMinutes(2));
+
+        lease.Should().NotBeNull();
+        lease!.Kind.Should().Be(PrivacyWorkKinds.DataSubjectRequest);
+        lease.WorkId.Should().Be(requestId);
+    }
+
+    [Fact]
+    public async Task ClaimNextAsync_WithMultipleDsars_UsesEarliestLegalDeadline()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        await database.SeedDataSubjectRequestAsync(
+            deadlineAt: DateTimeOffset.UtcNow.AddDays(20));
+        var urgentId = await database.SeedDataSubjectRequestAsync(
+            deadlineAt: DateTimeOffset.UtcNow.AddDays(1));
+
+        await using var context = database.CreateContext();
+        var lease = await database.CreateStore(context)
+            .ClaimNextAsync("privacy-deadline", TimeSpan.FromMinutes(2));
+
+        lease.Should().NotBeNull();
+        lease!.WorkId.Should().Be(urgentId);
+    }
+
+    [Fact]
     public async Task ClaimNextAsync_WithTwoWorkers_GrantsOneExclusiveRetentionLease()
     {
         if (!SqlServerTestEnvironment.IsAvailable())
@@ -116,6 +160,79 @@ public sealed class PrivacyWorkStoreSqlServerTests
         request.LeaseOwner.Should().BeNull();
     }
 
+    [Fact]
+    public async Task RenewLeaseAsync_AfterExpiry_CannotResurrectOwnership()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        var requestId = await database.SeedDataSubjectRequestAsync();
+        PrivacyWorkLease lease;
+        await using (var claimContext = database.CreateContext())
+        {
+            lease = (await database.CreateStore(claimContext)
+                .ClaimNextAsync("privacy-expired", TimeSpan.FromMinutes(2)))!;
+        }
+
+        await using (var expiryContext = database.CreateContext())
+        {
+            await expiryContext.DataSubjectRequests
+                .Where(item => item.Id == requestId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(
+                    item => item.LeaseExpiresAt,
+                    DateTimeOffset.UtcNow.AddSeconds(-1)));
+        }
+
+        await using (var renewContext = database.CreateContext())
+        {
+            (await database.CreateStore(renewContext)
+                    .RenewLeaseAsync(lease, "privacy-expired", TimeSpan.FromMinutes(2)))
+                .Should().BeFalse();
+        }
+
+        await using var verification = database.CreateContext();
+        var request = await verification.DataSubjectRequests.SingleAsync(item => item.Id == requestId);
+        request.LeaseOwner.Should().Be("privacy-expired");
+        request.LeaseExpiresAt.Should().BeBefore(DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task ReleaseLeaseAsync_RequeuesInterruptedDsarWithoutConsumingAnotherAttempt()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        var requestId = await database.SeedDataSubjectRequestAsync();
+        PrivacyWorkLease lease;
+        await using (var claimContext = database.CreateContext())
+        {
+            lease = (await database.CreateStore(claimContext)
+                .ClaimNextAsync("privacy-stopping", TimeSpan.FromMinutes(2)))!;
+        }
+
+        await using (var releaseContext = database.CreateContext())
+        {
+            (await database.CreateStore(releaseContext)
+                    .ReleaseLeaseAsync(lease, "privacy-stopping"))
+                .Should().BeTrue();
+        }
+
+        await using var verification = database.CreateContext();
+        var request = await verification.DataSubjectRequests.SingleAsync(item => item.Id == requestId);
+        request.Status.Should().Be(DataSubjectRequestStatuses.Accepted);
+        request.AttemptCount.Should().Be(1);
+        request.LeaseOwner.Should().BeNull();
+        request.LeaseExpiresAt.Should().BeNull();
+        request.LastErrorCode.Should().Be(PrivacyErrorCodes.WorkerPaused);
+        request.CompletedAt.Should().BeNull();
+    }
+
     private sealed class SqlTestDatabase : IAsyncDisposable
     {
         private readonly string _connectionString;
@@ -193,7 +310,7 @@ public sealed class PrivacyWorkStoreSqlServerTests
             return action.Id;
         }
 
-        public async Task<Guid> SeedDataSubjectRequestAsync()
+        public async Task<Guid> SeedDataSubjectRequestAsync(DateTimeOffset? deadlineAt = null)
         {
             await using var context = CreateContext();
             var request = new DataSubjectRequest
@@ -206,6 +323,7 @@ public sealed class PrivacyWorkStoreSqlServerTests
                 Status = DataSubjectRequestStatuses.Accepted,
                 RequestedAt = DateTimeOffset.UtcNow,
                 AvailableAt = DateTimeOffset.UtcNow.AddSeconds(-1),
+                DeadlineAt = deadlineAt,
                 MaxAttempts = 5
             };
             context.DataSubjectRequests.Add(request);

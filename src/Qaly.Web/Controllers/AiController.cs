@@ -75,9 +75,11 @@ public class AiController : BaseApiController
         });
 
     [HttpPost("sync")]
+    [Authorize(Policy = "AdminOnly")]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Sync()
     {
-        await _ingestionService.SyncAllDataAsync();
+        await _ingestionService.SyncAllDataAsync(HttpContext.RequestAborted);
         return Ok(new { message = "Data sync to vector database completed." });
     }
 

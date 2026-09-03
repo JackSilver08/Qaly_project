@@ -28,7 +28,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
     private readonly IAiWorkflowService _workflow;
     private readonly IAiJobActivityService _activity;
     private readonly IOptionsMonitor<AiJobPlatformOptions> _options;
-    private readonly IAiNativeAuthorizationService? _authorization;
+    private readonly IAiNativeAuthorizationService _authorization;
 
     public AiActionComposerService(
         IRepository<Project> projects,
@@ -44,7 +44,7 @@ public sealed class AiActionComposerService : IAiActionComposerService
         IAiWorkflowService workflow,
         IAiJobActivityService activity,
         IOptionsMonitor<AiJobPlatformOptions> options,
-        IAiNativeAuthorizationService? authorization = null)
+        IAiNativeAuthorizationService authorization)
     {
         _projects = projects;
         _projectMembers = projectMembers;
@@ -427,39 +427,15 @@ public sealed class AiActionComposerService : IAiActionComposerService
 
     private async Task<bool> CanManageProjectAsync(Project project, Guid userId, CancellationToken ct)
     {
-        if (_authorization != null)
+        var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUser.Role, ct);
+        if (systemTier != AiNativeSystemTier.Full)
         {
-            var systemTier = await _authorization.ResolveSystemTierAsync(userId, _currentUser.Role, ct);
-            if (systemTier != AiNativeSystemTier.Full)
-            {
-                return false;
-            }
-
-            var isAdmin = await _users.GetQueryable()
-                .AnyAsync(user => user.Id == userId && user.Role == ProjectRoleRules.SystemAdmin, ct);
-            var authorization = await _authorization.ResolveProjectAsync(project, userId, isAdmin, ct);
-            return authorization.CanManage;
+            return false;
         }
 
-        if (project.OwnerId == userId ||
-            await _users.GetQueryable().AnyAsync(user => user.Id == userId && user.Role == "Admin", ct))
-        {
-            return true;
-        }
-
-        var role = await _projectMembers.GetQueryable()
-            .Where(member => member.ProjectId == project.Id && member.UserId == userId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(role)) return true;
-
-        return project.OrganizationId.HasValue &&
-            (project.Organization?.OwnerId == userId ||
-             await _organizationMembers.GetQueryable().AnyAsync(
-                 member => member.OrganizationId == project.OrganizationId.Value &&
-                           member.UserId == userId &&
-                           (member.Role == "Owner" || member.Role == "Admin"),
-                 ct));
+        var isAdmin = await _users.GetQueryable()
+            .AnyAsync(user => user.Id == userId && user.IsActive && user.Role == ProjectRoleRules.SystemAdmin, ct);
+        return (await _authorization.ResolveProjectAsync(project, userId, isAdmin, ct)).CanManage;
     }
 
     private static string ComputeHash(string value)

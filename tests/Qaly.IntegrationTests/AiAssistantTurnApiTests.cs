@@ -1,11 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.DTOs.Ai;
 using Qaly.Application.Services;
+using Qaly.Application.Common.Telemetry;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 
@@ -36,6 +39,41 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
+
+    [Fact]
+    public async Task CompletedDurableTurn_EmitsAiSpecificSliWithoutEntityIdentifiers()
+    {
+        var measurements = new ConcurrentBag<(string Name, IReadOnlyDictionary<string, object?> Tags)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, meterListener) =>
+        {
+            if (instrument.Meter.Name == QalyAiTelemetry.MeterName)
+            {
+                meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+            measurements.Add((instrument.Name, TelemetryTags(tags))));
+        listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+            measurements.Add((instrument.Name, TelemetryTags(tags))));
+        listener.Start();
+
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "Bạn có thể giúp tôi những gì?",
+            new AiAssistantClientContextDto("/dashboard", "workspace")));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        measurements.Should().Contain(item => item.Name == "qaly.ai.assistant.first_progress.duration");
+        measurements.Should().Contain(item => item.Name == "qaly.ai.assistant.first_answer.duration");
+        measurements.Should().Contain(item =>
+            item.Name == "qaly.ai.assistant.turns" &&
+            Equals(item.Tags["qaly.ai.outcome"], "completed"));
+        measurements.SelectMany(item => item.Tags.Keys).Should().NotContain(key =>
+            key.Contains("user", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("project_id", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("prompt", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("message", StringComparison.OrdinalIgnoreCase));
+    }
 
     [Fact]
     [Trait("TestId", "TEST-UA-04")]
@@ -1259,10 +1297,10 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         inFlightRequest.Headers.Add("X-Request-Id", request.ClientTurnId!.Value.ToString());
         var inFlight = _client.SendAsync(inFlightRequest);
         AssistantTurn? running = null;
-        // Under the broad P06-P28 gate the test host may need several seconds to
-        // schedule this request. Keep polling beyond the normal 4s fast path so
-        // the assertion measures durable persistence, not thread-pool timing.
-        for (var attempt = 0; attempt < 300 && running == null; attempt++)
+        // The integration chat decorator opens a five-second window only after the
+        // durable row exists, so this poll verifies persistence rather than relying on
+        // incidental provider or thread-pool timing.
+        for (var attempt = 0; attempt < 400 && running == null; attempt++)
         {
             await Task.Delay(50);
             using var scope = _factory.Services.CreateScope();
@@ -1272,13 +1310,12 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         }
         running.Should().NotBeNull("the durable turn is written before the delayed analysis adapter runs");
 
-        var csrf = (await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
         using var cancelRequest = new HttpRequestMessage(
             HttpMethod.Post, $"/api/ai/assistant/turns/{running!.Id:D}/cancel")
         {
             Content = JsonContent.Create(new AiAssistantTurnControlRequestDto(1))
         };
-        cancelRequest.Headers.Add("X-CSRF-TOKEN", csrf);
+        cancelRequest.Headers.Add("X-CSRF-TOKEN", turnCsrf);
         var cancelResponse = await _client.SendAsync(cancelRequest);
         cancelResponse.StatusCode.Should().Be(HttpStatusCode.OK, await cancelResponse.Content.ReadAsStringAsync());
 
@@ -1302,7 +1339,7 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         {
             Content = JsonContent.Create(new AiAssistantTurnControlRequestDto(1, ClientTurnId: resumedClientTurnId))
         };
-        resumeRequest.Headers.Add("X-CSRF-TOKEN", csrf);
+        resumeRequest.Headers.Add("X-CSRF-TOKEN", turnCsrf);
         resumeRequest.Headers.Add("Idempotency-Key", $"assistant-resume-{resumedClientTurnId:N}");
         resumeRequest.Headers.Add("X-Request-Id", resumedClientTurnId.ToString());
         var resumeResponse = await _client.SendAsync(resumeRequest);
@@ -1479,6 +1516,12 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         plannedTasks.Should().Contain(task => task.DependencyClientIds.Count > 0);
         var selectedScenario = staffing.ProjectLaunchPlan.StaffingScenarios
             .Single(item => item.ScenarioId == staffing.ProjectLaunchPlan.SelectedScenarioId);
+        selectedScenario.RuleDecisions.Should().Contain(item =>
+            item.RuleKey == "manager_professional_eligibility" && item.Result == "pass");
+        selectedScenario.SourceRefs.Should().Contain(item =>
+            item.Contains("member-professional-profile", StringComparison.Ordinal));
+        selectedScenario.ManagerCandidates.Should().Contain(item =>
+            item.ManagerEligible && item.UserId == selectedScenario.ManagerUserId);
         if (selectedScenario.Feasible)
         {
             plannedTasks.Should().OnlyContain(task => task.ProposedAssigneeId.HasValue,
@@ -2270,6 +2313,10 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             $"assistant-test-{Guid.NewGuid():N}");
     }
 
+    private static Dictionary<string, object?> TelemetryTags(
+        ReadOnlySpan<KeyValuePair<string, object?>> tags)
+        => tags.ToArray().ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+
     private async Task<AiAssistantSessionDto> CreateSessionAsync()
     {
         var csrf = (await _client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf", JsonOptions))!.Token;
@@ -2612,6 +2659,28 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             UserId = userId,
             WeeklyCapacityHours = 40,
             TimeZoneId = "Asia/Ho_Chi_Minh"
+        });
+        var managerProfile = new ProfessionalProfileDefinition
+        {
+            OrganizationId = organization.Id,
+            Key = "product-project-manager",
+            Name = "Product / Project Manager",
+            Category = "Product & Delivery",
+            IsSystemSeed = true,
+            IsActive = true
+        };
+        db.ProfessionalProfileDefinitions.Add(managerProfile);
+        db.OrganizationMemberProfessionalProfiles.Add(new OrganizationMemberProfessionalProfile
+        {
+            OrganizationId = organization.Id,
+            UserId = userId,
+            ProfessionalProfileDefinitionId = managerProfile.Id,
+            Proficiency = ProfessionalProfileCatalog.Expert,
+            VerificationStatus = OrganizationMemberProfessionalProfile.Verified,
+            Source = ProfessionalProfileCatalog.ManagerConfirmed,
+            VerifiedByUserId = userId,
+            VerifiedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            EffectiveFrom = DateTimeOffset.UtcNow.AddYears(-1)
         });
         var skillCatalog = new[]
         {

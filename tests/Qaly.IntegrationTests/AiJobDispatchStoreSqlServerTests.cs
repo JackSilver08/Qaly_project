@@ -129,6 +129,83 @@ public sealed class AiJobDispatchStoreSqlServerTests
     }
 
     [Fact]
+    public async Task RenewLeaseAsync_AfterExpiry_CannotResurrectOwnership()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        var jobId = await database.SeedQueuedJobAsync();
+        AiJobLease lease;
+        await using (var claimContext = database.CreateContext())
+        {
+            lease = (await new AiJobDispatchStore(claimContext)
+                .ClaimNextAsync("worker-expired", TimeSpan.FromMinutes(2)))!;
+        }
+
+        await using (var expiryContext = database.CreateContext())
+        {
+            await expiryContext.AiJobDispatches
+                .Where(item => item.Id == lease.DispatchId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(
+                    item => item.LeaseExpiresAt,
+                    DateTimeOffset.UtcNow.AddSeconds(-1)));
+        }
+
+        await using (var renewContext = database.CreateContext())
+        {
+            var renewed = await new AiJobDispatchStore(renewContext)
+                .RenewLeaseAsync(lease.DispatchId, "worker-expired", TimeSpan.FromMinutes(2));
+            renewed.Should().BeFalse();
+        }
+
+        await using var verification = database.CreateContext();
+        var dispatch = await verification.AiJobDispatches.SingleAsync(item => item.AiJobId == jobId);
+        dispatch.LeaseOwner.Should().Be("worker-expired");
+        dispatch.LeaseExpiresAt.Should().BeBefore(DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
+    public async Task ReleaseLeaseAsync_RequeuesInterruptedAttemptWithoutProviderFailure()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        var jobId = await database.SeedQueuedJobAsync();
+        AiJobLease lease;
+        await using (var claimContext = database.CreateContext())
+        {
+            lease = (await new AiJobDispatchStore(claimContext)
+                .ClaimNextAsync("worker-stopping", TimeSpan.FromMinutes(2)))!;
+        }
+
+        await using (var releaseContext = database.CreateContext())
+        {
+            (await new AiJobDispatchStore(releaseContext)
+                    .ReleaseLeaseAsync(lease.DispatchId, "worker-stopping"))
+                .Should().BeTrue();
+        }
+
+        await using var verification = database.CreateContext();
+        var job = await verification.AiJobs.SingleAsync(item => item.Id == jobId);
+        var dispatch = await verification.AiJobDispatches.SingleAsync(item => item.AiJobId == jobId);
+        var attempt = await verification.AiProviderAttempts.SingleAsync(item => item.AiJobId == jobId);
+        job.Status.Should().Be(AiJobStatuses.Retrying);
+        job.LastErrorCode.Should().Be(AiErrorCodes.WorkerPaused);
+        dispatch.LeaseOwner.Should().BeNull();
+        dispatch.LeaseExpiresAt.Should().BeNull();
+        dispatch.CompletedAt.Should().BeNull();
+        attempt.Status.Should().Be(AiAttemptStatuses.Canceled);
+        attempt.ErrorCode.Should().Be(AiErrorCodes.WorkerPaused);
+        attempt.Retryable.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task AbandonLeaseAsync_SchedulesBackoffAndPreventsEarlyReclaim()
     {
         if (!SqlServerTestEnvironment.IsAvailable())
@@ -274,14 +351,92 @@ public sealed class AiJobDispatchStoreSqlServerTests
         (await verification.AiGeneratedDrafts.CountAsync(item => item.AiJobId == jobId)).Should().Be(1);
     }
 
+    [Fact]
+    public async Task ProcessAsync_AfterAnotherWorkerTakesExpiredLease_CannotPersistStaleResult()
+    {
+        if (!SqlServerTestEnvironment.IsAvailable())
+        {
+            return;
+        }
+
+        await using var database = await SqlTestDatabase.CreateAsync();
+        var jobId = await database.SeedQueuedJobAsync();
+        AiJobLease staleLease;
+        await using (var claimContext = database.CreateContext())
+        {
+            staleLease = (await new AiJobDispatchStore(claimContext)
+                .ClaimNextAsync("worker-stale", TimeSpan.FromMinutes(2)))!;
+        }
+
+        var gatewayStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gatewayResult = new TaskCompletionSource<AiResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var staleProcessorContext = database.CreateContext();
+        var (staleProcessor, _) = CreateProcessor(
+            staleProcessorContext,
+            new AiResponse(),
+            gatewayStarted,
+            gatewayResult);
+        var staleProcessing = staleProcessor.ProcessAsync(staleLease, "worker-stale");
+        await gatewayStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await using (var expiryContext = database.CreateContext())
+        {
+            await expiryContext.AiJobDispatches
+                .Where(item => item.Id == staleLease.DispatchId)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(
+                    item => item.LeaseExpiresAt,
+                    DateTimeOffset.UtcNow.AddSeconds(-1)));
+        }
+
+        AiJobLease? currentLease;
+        await using (var takeoverContext = database.CreateContext())
+        {
+            currentLease = await new AiJobDispatchStore(takeoverContext)
+                .ClaimNextAsync("worker-current", TimeSpan.FromMinutes(2));
+        }
+        currentLease.Should().NotBeNull();
+        currentLease!.AttemptNumber.Should().Be(2);
+
+        gatewayResult.SetResult(new AiResponse
+        {
+            IsSuccess = true,
+            Content = """{"title":"stale result must be discarded","source_refs":[]}""",
+            ProviderName = "Ollama",
+            ModelName = "stale-test"
+        });
+        await staleProcessing.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await using var verification = database.CreateContext();
+        var job = await verification.AiJobs.Include(item => item.Dispatch).SingleAsync(item => item.Id == jobId);
+        var attempts = await verification.AiProviderAttempts
+            .Where(item => item.AiJobId == jobId)
+            .OrderBy(item => item.AttemptNumber)
+            .ToListAsync();
+        job.Status.Should().Be(AiJobStatuses.Running);
+        job.ResultJson.Should().BeNull();
+        job.Dispatch!.LeaseOwner.Should().Be("worker-current");
+        attempts.Should().HaveCount(2);
+        attempts[0].Status.Should().Be(AiAttemptStatuses.Failed);
+        attempts[1].Status.Should().Be(AiAttemptStatuses.Running);
+        (await verification.AiGeneratedDrafts.CountAsync(item => item.AiJobId == jobId)).Should().Be(0);
+    }
+
     private static (AiJobProcessor Processor, Mock<IAiGateway> Gateway) CreateProcessor(
         QalyDbContext context,
-        AiResponse response)
+        AiResponse response,
+        TaskCompletionSource? gatewayStarted = null,
+        TaskCompletionSource<AiResponse>? deferredResponse = null)
     {
         var gateway = new Mock<IAiGateway>();
         gateway
             .Setup(item => item.ExecuteAsync(It.IsAny<AiRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(response);
+            .Returns((AiRequest _, CancellationToken ct) =>
+            {
+                gatewayStarted?.TrySetResult();
+                return deferredResponse == null
+                    ? Task.FromResult(response)
+                    : deferredResponse.Task.WaitAsync(ct);
+            });
         var sourceGuard = new Mock<IAiSourceGuard>();
         sourceGuard
             .Setup(item => item.ValidateAsync(

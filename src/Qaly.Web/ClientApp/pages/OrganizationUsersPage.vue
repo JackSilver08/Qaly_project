@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Award, Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
+import { Award, BriefcaseBusiness, Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
 import MemberSkillEvidenceDrawer from '../components/MemberSkillEvidenceDrawer.vue'
+import MemberProfessionalProfileDrawer from '../components/MemberProfessionalProfileDrawer.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import type { UserDto } from '../types'
 import { confirmDialog } from '../composables/use-confirm-dialog'
 import { showError, showSuccess } from '../composables/use-toast'
 import { apiCommand, apiResult, errorMessage } from '../utils/api-client'
+import {
+  canManageOrganizationUsers,
+  canUseOrganizationCapability,
+  canViewProfessionalProfiles,
+  type OrganizationActorContext,
+} from '../utils/organization-access'
 
 interface Organization {
   id: string
@@ -46,6 +53,7 @@ const loadingError = ref('')
 const saving = ref<string | null>(null)
 const inviteOpen = ref(false)
 const evidenceMember = ref<OrganizationMember | null>(null)
+const professionalProfileMember = ref<OrganizationMember | null>(null)
 const invite = ref({ email: '', role: 'Member' })
 const moderatorCapabilities = ref<string[]>([])
 
@@ -66,22 +74,20 @@ const visibleMembers = computed(() => {
 
 const myMembership = computed(() => members.value.find((item) => item.userId === me.value?.id))
 
-const canManage = computed(() => {
-  if (me.value?.role === 'Admin') return true
-  if (selectedOrganization.value?.ownerId === me.value?.id) return true
+const accessContext = computed<OrganizationActorContext>(() => ({
+  systemRole: me.value?.role,
+  actorId: me.value?.id,
+  ownerId: selectedOrganization.value?.ownerId,
+  membershipRole: myMembership.value?.role,
+  hasMembership: !!myMembership.value,
+  moderatorCapabilities: moderatorCapabilities.value,
+}))
 
-  const membershipRole = myMembership.value?.role ?? ''
-  if (['Owner', 'OrganizationAdmin', 'Admin', 'Manager'].includes(membershipRole)) {
-    return true
-  }
-
-  return hasCapability('organization.users.invite') ||
-    hasCapability('organization.users.update_role') ||
-    hasCapability('organization.users.remove')
-})
+const canManage = computed(() => canManageOrganizationUsers(accessContext.value))
+const canViewProfessionalProfile = computed(() => canViewProfessionalProfiles(accessContext.value))
 
 function hasCapability(permission: string) {
-  return moderatorCapabilities.value.length === 0 || moderatorCapabilities.value.includes(permission)
+  return canUseOrganizationCapability(accessContext.value, permission)
 }
 
 const hasOrganizations = computed(() => organizations.value.length > 0)
@@ -254,6 +260,7 @@ onMounted(async () => {
         v-if="canManage && hasCapability('organization.users.invite')"
         class="primary"
         :disabled="isInitialLoad || !selectedId"
+        :title="isInitialLoad ? 'Đang xác định tổ chức hiện tại' : !selectedId ? 'Chọn một tổ chức trước khi thêm thành viên' : 'Thêm tài khoản đang hoạt động vào tổ chức này'"
         @click="inviteOpen = true"
       >
         <MailPlus :size="18" /> Thêm thành viên
@@ -392,6 +399,16 @@ onMounted(async () => {
               <td>{{ joinedLabel(member.joinedAt) }}</td>
               <td class="row-action">
                 <button
+                  v-if="canViewProfessionalProfile"
+                  class="professional-profile"
+                  type="button"
+                  :aria-label="`Xem hồ sơ nghề nghiệp ${member.fullName}`"
+                  title="Hồ sơ nghề nghiệp — không cấp quyền truy cập"
+                  @click="professionalProfileMember = member"
+                >
+                  <BriefcaseBusiness :size="17" />
+                </button>
+                <button
                   class="evidence"
                   type="button"
                   :aria-label="`Xem bằng chứng kỹ năng ${member.fullName}`"
@@ -442,7 +459,7 @@ onMounted(async () => {
         </label>
         <div class="modal-actions">
           <button type="button" class="secondary" @click="inviteOpen = false">Hủy</button>
-          <button type="submit" class="primary" :disabled="saving === 'invite'">Thêm thành viên</button>
+          <button type="submit" class="primary" :disabled="saving === 'invite'" :title="saving === 'invite' ? 'Đang lưu và đọc lại thành viên' : 'Nhập email hợp lệ; trình duyệt sẽ đưa bạn tới trường còn thiếu'">Thêm thành viên</button>
         </div>
       </form>
     </div>
@@ -453,6 +470,13 @@ onMounted(async () => {
       :member-id="evidenceMember.userId"
       :member-name="evidenceMember.fullName"
       @close="evidenceMember = null"
+    />
+    <MemberProfessionalProfileDrawer
+      v-if="professionalProfileMember && selectedId"
+      :organization-id="selectedId"
+      :member-id="professionalProfileMember.userId"
+      :member-name="professionalProfileMember.fullName"
+      @close="professionalProfileMember = null"
     />
   </main>
 </template>
@@ -671,6 +695,22 @@ th {
   background: transparent;
   color: #0f766e;
   cursor: pointer;
+}
+
+.professional-profile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
+.professional-profile:hover {
+  background: #eff6ff;
 }
 
 .evidence:hover {

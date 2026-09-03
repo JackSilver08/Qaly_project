@@ -30,7 +30,7 @@
                     <div class="auth-error" data-toast-message="@Model.ErrorMessage" data-toast-type="error">@Model.ErrorMessage</div>
                 }
 
-                <form id="registerForm" method="post" class="auth-form" asp-antiforgery="false">
+                <form id="registerForm" method="post" class="auth-form">
                     <label>
                         <span>Họ và tên</span>
                         <input asp-for="FullName" type="text" autocomplete="name" required />

@@ -6,6 +6,7 @@ import ImportMappingStep from './ImportMappingStep.vue'
 import ImportConfirmStep from './ImportConfirmStep.vue'
 import { showSuccess, showError } from '../../composables/use-toast'
 import { confirmDialog } from '../../composables/use-confirm-dialog'
+import { apiFetch } from '../../utils/api-client'
 
 const props = defineProps<{
   projectId?: string
@@ -68,7 +69,7 @@ async function loadImportSessions() {
   if (!props.projectId) return
   isLoadingImportSessions.value = true
   try {
-    const res = await fetch(`/api/import/sessions/${props.projectId}`)
+    const res = await apiFetch(`/api/import/sessions/${props.projectId}`)
     const data = await res.json()
     importSessions.value = data.isSuccess ? (data.data ?? []) : []
   } catch {
@@ -102,7 +103,7 @@ async function parseFile(sheetName?: string | null) {
     formData.append('file', file.value)
 
     if (importMode.value === 'document') {
-      const res = await fetch('/api/import/documents/preview', {
+      const res = await apiFetch('/api/import/documents/preview', {
         method: 'POST',
         body: formData,
       })
@@ -120,7 +121,7 @@ async function parseFile(sheetName?: string | null) {
     }
 
     if (importMode.value === 'zip') {
-      const res = await fetch('/api/import/documents/zip/preview', {
+      const res = await apiFetch('/api/import/documents/zip/preview', {
         method: 'POST',
         body: formData,
       })
@@ -139,7 +140,7 @@ async function parseFile(sheetName?: string | null) {
     if (sheetName) formData.append('sheetName', sheetName)
     formData.append('firstRowIsHeader', String(firstRowIsHeader.value))
 
-    const res = await fetch('/api/import/parse', {
+    const res = await apiFetch('/api/import/parse', {
       method: 'POST',
       body: formData,
     })
@@ -209,7 +210,7 @@ async function executeImport() {
       formData.append('projectId', props.projectId)
       formData.append('title', documentTitle.value)
 
-      const res = await fetch('/api/import/documents/execute', {
+      const res = await apiFetch('/api/import/documents/execute', {
         method: 'POST',
         body: formData,
       })
@@ -234,7 +235,7 @@ async function executeImport() {
 
       formData.append('projectId', props.projectId)
 
-      const res = await fetch('/api/import/documents/zip/execute', {
+      const res = await apiFetch('/api/import/documents/zip/execute', {
         method: 'POST',
         body: formData,
       })
@@ -265,7 +266,7 @@ async function executeImport() {
       defaultStatus: defaultStatus.value,
     }))
 
-    const res = await fetch('/api/import/execute', {
+    const res = await apiFetch('/api/import/execute', {
       method: 'POST',
       body: formData,
     })
@@ -300,7 +301,7 @@ async function undoImport() {
 
   isLoading.value = true
   try {
-    const res = await fetch(`/api/import/sessions/${importResult.value.importSessionId}`, {
+    const res = await apiFetch(`/api/import/sessions/${importResult.value.importSessionId}`, {
       method: 'DELETE',
     })
     const data = await res.json()
@@ -644,6 +645,10 @@ onMounted(loadImportSessions)
           <div v-if="importResult.unmappedStatuses?.length" class="import-warning">
             <AlertTriangle :size="16" />
             <span>Các giá trị trạng thái không nhận diện được (đã đặt về Chưa làm): {{ importResult.unmappedStatuses.join(', ') }}</span>
+          </div>
+          <div v-if="importResult.unmappedPriorities?.length" class="import-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>Các giá trị ưu tiên không nhận diện được (đã đặt về Trung bình): {{ importResult.unmappedPriorities.join(', ') }}</span>
           </div>
 
           <!-- Skipped Rows Detail -->

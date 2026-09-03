@@ -15,7 +15,9 @@ public sealed partial class PrivacyWorkProcessor
         var request = await _db.DataSubjectRequests.FirstOrDefaultAsync(item => item.Id == lease.WorkId, ct);
         if (request == null ||
             request.Status != DataSubjectRequestStatuses.Collecting ||
-            request.LeaseOwner != workerId)
+            request.LeaseOwner != workerId ||
+            request.LeaseExpiresAt is not { } leaseExpiresAt ||
+            leaseExpiresAt <= DateTimeOffset.UtcNow)
         {
             return;
         }
@@ -27,20 +29,24 @@ public sealed partial class PrivacyWorkProcessor
 
         if (request.RequestType == DataSubjectRequestTypes.Export)
         {
-            await BuildExportAsync(request, ct);
+            await BuildExportAsync(request, lease, workerId, ct);
             return;
         }
 
         if (request.RequestType == DataSubjectRequestTypes.Delete)
         {
-            await ExecuteDeletionAsync(request, ct);
+            await ExecuteDeletionAsync(request, lease, workerId, ct);
             return;
         }
 
         throw new InvalidOperationException($"Unsupported data-subject request type '{request.RequestType}'.");
     }
 
-    private async Task BuildExportAsync(DataSubjectRequest request, CancellationToken ct)
+    private async Task BuildExportAsync(
+        DataSubjectRequest request,
+        PrivacyWorkLease lease,
+        string workerId,
+        CancellationToken ct)
     {
         var tenantId = request.TenantId!.Value;
         var subjectUserId = request.SubjectUserId!.Value;
@@ -279,10 +285,14 @@ public sealed partial class PrivacyWorkProcessor
                 ["artifactExpiresAt"] = request.ResultExpiresAt?.ToString("O")
             },
             dsarId: request.Id);
-        await _db.SaveChangesAsync(ct);
+        await SaveIfLeaseOwnedAsync(lease, workerId, ct);
     }
 
-    private async Task ExecuteDeletionAsync(DataSubjectRequest request, CancellationToken ct)
+    private async Task ExecuteDeletionAsync(
+        DataSubjectRequest request,
+        PrivacyWorkLease lease,
+        string workerId,
+        CancellationToken ct)
     {
         var tenantId = request.TenantId!.Value;
         var subjectUserId = request.SubjectUserId!.Value;
@@ -317,13 +327,13 @@ public sealed partial class PrivacyWorkProcessor
                 PrivacyErrorCodes.LegalHold,
                 new Dictionary<string, string?> { ["scope"] = scope },
                 request.Id);
-            await _db.SaveChangesAsync(ct);
+            await SaveIfLeaseOwnedAsync(lease, workerId, ct);
             return;
         }
 
         foreach (var projectId in projectIds)
         {
-            await InvalidateVectorAsync(projectId, subjectUserId);
+            await InvalidateVectorAsync(projectId, subjectUserId, ct);
         }
 
         var heldMeetingIds = await _db.PrivacyLegalHolds.AsNoTracking()
@@ -470,7 +480,7 @@ public sealed partial class PrivacyWorkProcessor
                 ["backupExpiryPending"] = backupExpiryPending.ToString()
             },
             dsarId: request.Id);
-        await _db.SaveChangesAsync(ct);
+        await SaveIfLeaseOwnedAsync(lease, workerId, ct);
     }
 
     private async Task<List<Guid>> GetScopedProjectIdsAsync(Guid tenantId, Guid? projectId, CancellationToken ct)

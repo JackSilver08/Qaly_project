@@ -23,6 +23,21 @@ Runbook này chỉ thay cho **phần 3 — Prompt test AI Native**. Phần 1–2
 | D05 | Một tài khoản Member chỉ có quyền đọc/phân tích, không có quyền mutation |
 | D06 | Cách fault-inject provider ở local/dev hoặc một provider chủ động tắt; không phá/xóa API key thật |
 
+### Manifest seed đã kiểm chứng cho demo tốt nghiệp
+
+Khi `Seed:UseRichDemoSeed=true`, các dữ kiện sau được tạo từ database thật và được khóa bằng `RichDemoSeedTests.SeedAsync_SatisfiesGraduationDemoManifestD01ThroughD05`:
+
+| Mã | Dữ liệu seed nên dùng | Bằng chứng cần nhìn |
+|---|---|---|
+| D01 | Project **Qaly Work OS - Customer Demo** | Có Sprint hiện tại/kế tiếp, member theo nhiều role, Task có estimate/deadline/time entry và dependency thật |
+| D02 | Task mở **Chuẩn hóa dashboard demo theo dữ liệu thật**; Task Done **Rà soát matrix phân quyền cho manager và viewer** | Task mở có required skill `frontend-vue` và `data-retail-integration`; Organization có capacity profile cho 12 người và các cửa sổ `Unavailable`/`ReducedCapacity` thật |
+| D03 | Organization `qaly-demo-2026` | 17 skill catalog, ≥59 Task skill requirements, ≥18 confirmed completion attributions và verified professional profile cho toàn bộ 12 member |
+| D04 | Wiki **Demo Data Handbook - Qaly 2026**; Group **Nova Retail Pilot War Room**; Meeting Import **Nova Retail Pilot Weekly** | Wiki có section/source, Group có Owner/Manager và Poll, Meeting Import có transcript + action-item mapping |
+| D05 | `yen.nhi@qaly.dev` | System role `Member`, Project role `Viewer` trên **Qaly Work OS - Customer Demo**; dùng để kiểm tra P25 read-only hữu ích và không có mutation control |
+| D06 | Không seed lỗi giả vào database | Automated provider-failure contract đã có; manual P26 chỉ PASS khi preview thực sự dùng provider bị tắt/lỗi. Nếu không tạo được điều kiện này thì ghi `NOT_VERIFIED`, không xóa hoặc sửa API key thật |
+
+Seed là idempotent và bổ sung lại baseline còn thiếu; nó không tự xóa Project/Task do lượt manual trước tạo ra. Để replay số đếm từ một baseline tuyệt đối, dùng database demo mới hoặc bản sao sạch rồi chạy migration + seed. Không chạy reset phá hủy trên database có dữ liệu người dùng.
+
 ## 2. Ma trận trang — tác dụng — prompt — tiêu chí PASS
 
 ### A. Khả năng, dữ liệu và hội thoại
@@ -127,7 +142,7 @@ Kết quả này dùng exact prompt/public API fixture cho từng dòng, canonic
 
 Một lỗi runtime thật đã được tái hiện sau phiếu nghiệm thu 2026-08-22: bước xác nhận Project trả `409` trên SQL Server vì transaction được mở ngoài `SqlServerRetryingExecutionStrategy`. Vì evidence runtime mới luôn thắng trạng thái lịch sử, disposition hiện tại được cập nhật thành:
 
-`AUTOMATED_GATE_P06_P28_PASS / TARGETED_MANUAL_REPLAY_PENDING`
+`AUTOMATED_GATE_P06_P28_PASS / TARGETED_REPLAY_PASS_2026-09-02`
 
 Các hiệu chỉnh trong gate này:
 
@@ -146,6 +161,30 @@ Evidence tự động hiện tại:
 | P09–P10 SQL retry/transaction | `PASS_AUTOMATED` | `TEST-AI-P09-P10-SQL-RETRY-TRANSACTION-01`: 1/1 PASS trên SQL Server migration schema, có canonical read-back và idempotency. |
 | Frontend contract | `PASS_AUTOMATED` | Vue typecheck PASS; solution build không warning/error. |
 | P28 | `EXTERNAL_DEFERRED_VERIFIED` | Không có credentialed adapter write/read-back mới; không giả lập thành công. |
-| UI P06–P28 trên preview mới | `NOT_VERIFIED` | Cần người dùng chạy lại targeted prompt/card sau khi preview được restart; không suy rộng Integration thành manual PASS. |
+| UI P16–P27 targeted | `PASS` | P16–P17 live natural prompts render đúng typed editable cards; P18–P24 persisted structured-card matrix PASS; P25–P27 read-only/fallback/metric-table/deep-link matrix PASS. P06–P15 giữ bằng chứng manual của người dùng và canonical automated evidence đã ghi ở mục 6–7. |
 
-Không trả lại `PRODUCT_ACCEPTED` chỉ dựa vào bảng này. Cần targeted manual replay tối thiểu P06 → P10 trên preview mới, sau đó tiếp tục P11 → P28 theo các prompt ở mục 2.
+Mốc hiện tại là `DEMO_READY_THESIS`, không phải chứng nhận production. P28 tiếp tục `EXTERNAL_DEFERRED_VERIFIED` cho tới khi có credentialed adapter write/read-back thật.
+
+## 8. Refinement và targeted replay P16–P27 — 2026-09-02
+
+- P16–P24 dùng typed review card, hiển thị rõ entity đích và nguồn; confirm label mô tả đúng mutation hoặc trường hợp không tạo Task.
+- P17 cho đổi required skill từ catalog Organization; lựa chọn đã review được ghi vào `TaskSkillRequirement` canonical.
+- P19 tạo Poll/options và card `GroupMessage` nhìn thấy trong Group bằng cùng một transaction; deadline quá khứ bị chặn có lý do.
+- P21/P24 cho tick từng thay đổi, sửa tên/ngày/lý do; không chọn Sprint nào bị chặn thay vì trả false-success receipt.
+- P22 hiển thị Project, ngày/giờ, timezone và kênh Email thật của worker.
+- P25 không render mutation draft/control; P26 hiển thị `Fallback server` cùng provider/model thật; P27 dùng metric/bảng/row navigation và process mặc định collapse.
+
+Focused evidence mới: Vue typecheck PASS; `AiNativeDomainActionsApiTests` `9/9`; P25/P27/P28 Integration `3/3`; P26 fallback Unit `1/1`. Final targeted Chromium evidence: P16–P17 live prompt `1/1 PASS`; P18–P24 typed card `1/1 PASS`; P25–P27 read-only/fallback/renderer/navigation `1/1 PASS`. Một failure ban đầu chỉ do test đọc `textContent` thay vì `value` của input Kênh gửi; assertion được sửa sang `toHaveValue`, phần P18–P27 chưa có bằng chứng được chạy lại và PASS `2/2`.
+
+## 9. Demo/thesis closing gate — 2026-09-02
+
+| Phạm vi | Kết quả cuối | Evidence hiện tại |
+|---|---|---|
+| P01–P05 | `PASS` | Manual/session evidence ở mục 6 và full Integration hiện tại. |
+| P06–P15 | `PASS` | Manual evidence người dùng đã hoàn tất tới P15; Project Launch/Task canonical contracts nằm trong full Integration. |
+| P16–P17 | `PASS` | Live natural prompt browser replay + canonical native-action Integration. |
+| P18–P24 | `PASS` | Typed renderer browser matrix + atomic/canonical mutation/read-back Integration. |
+| P25–P27 | `PASS` | Read-only/fallback/renderer/navigation browser matrix + role/source Integration. |
+| P28 | `EXTERNAL_DEFERRED_VERIFIED` | Server-owned adapter-state truth; không có credentialed write/read-back nên không phát success giả. |
+
+**Disposition cho báo cáo tốt nghiệp:** `DEMO_READY_THESIS`. Đây không phải `PRODUCTION_READY`; backlog production-only nằm tại `22_QALY_POST_THESIS_PRODUCTION_BACKLOG.md`.

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +14,10 @@ namespace Qaly.IntegrationTests;
 /// <summary>
 /// T1-DH-02: Auth session resilience integration tests.
 /// Maps: REQ-P0-01, REQ-ADR-02, GAP-002/021.
-/// Verifies: cookie flags, revoke semantics, logout, Redis-degraded path bounded time,
-/// and no false success when Redis is unavailable.
+/// Verifies: cookie flags, revoke semantics, logout, integration-cache authentication,
+/// and no false success when the production Redis dependency is substituted in tests.
+/// Redis timeout and circuit-breaker timing are covered deterministically by
+/// RedisTicketStoreTests and RedisSessionServiceTests.
 /// </summary>
 public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
 {
@@ -112,9 +115,11 @@ public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
         // Arrange
         await EnsureUserExists(_factory.TestUserId, "Revoke Test User", $"revoke-{Guid.NewGuid():N}@qaly.dev");
         using var client = _factory.CreateClient();
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
 
         // Act
         using var request = new HttpRequestMessage(HttpMethod.Delete, "/api/auth/sessions");
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
         var response = await client.SendAsync(request);
 
         // Assert — revoke endpoint responds without error
@@ -144,9 +149,12 @@ public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
         // Arrange
         await EnsureUserExists(_factory.TestUserId, "Logout Test User", $"logout-{Guid.NewGuid():N}@qaly.dev");
         using var client = _factory.CreateClient();
+        var csrf = (await client.GetFromJsonAsync<CsrfResponse>("/api/security/csrf"))!.Token;
 
         // Act
-        var response = await client.PostAsync("/api/auth/logout", null);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout");
+        request.Headers.Add("X-CSRF-TOKEN", csrf);
+        var response = await client.SendAsync(request);
 
         // Assert — logout completes successfully
         response.StatusCode.Should().Be(HttpStatusCode.OK,
@@ -170,28 +178,22 @@ public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
     }
 
     // ──────────────────────────────────────────────
-    // Redis-degraded bounded time (PERF-03 / GAP-021)
+    // Integration cache substitution (GAP-021)
     // ──────────────────────────────────────────────
 
     [Fact]
-    public async Task Me_WhenRedisUnavailable_RespondsWithinBoundedTime()
+    public async Task Me_WithInMemoryIntegrationCache_ReturnsCurrentUser()
     {
-        // Arrange — IntegrationTestFactory replaces Redis with DistributedMemoryCache
-        // This simulates a degraded Redis by using the in-memory fallback.
-        // The key assertion is that the response does NOT take multiple seconds.
+        // IntegrationTestFactory intentionally substitutes DistributedMemoryCache
+        // and TestAuthHandler. This proves the HTTP contract in that environment;
+        // it must not be presented as evidence of a live Redis outage.
         await EnsureUserExists(_factory.TestUserId, "Perf Test User", $"perf-{Guid.NewGuid():N}@qaly.dev");
         using var client = _factory.CreateClient();
 
-        // Act
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var response = await client.GetAsync("/api/auth/me");
-        stopwatch.Stop();
 
-        // Assert — degraded path must complete within 1 second (PERF-03)
         response.StatusCode.Should().Be(HttpStatusCode.OK,
-            "GET /api/auth/me must succeed in degraded Redis scenario");
-        stopwatch.ElapsedMilliseconds.Should().BeLessThanOrEqualTo(1000,
-            "authenticated request must complete within 1s even with degraded Redis (PERF-03 / GAP-021)");
+            "GET /api/auth/me must succeed with the integration cache substitute");
     }
 
     [Fact]
@@ -243,6 +245,8 @@ public class AuthSessionResilienceTests : IClassFixture<IntegrationTestFactory>
             await db.SaveChangesAsync();
         }
     }
+
+    private sealed record CsrfResponse(string Token);
 }
 
 #pragma warning restore CA1707

@@ -21,6 +21,7 @@ public static class PrivacyErrorCodes
     public const string ExportExpired = "PRIVACY_EXPORT_EXPIRED";
     public const string InvalidTransition = "PRIVACY_INVALID_TRANSITION";
     public const string IdempotencyConflict = "PRIVACY_IDEMPOTENCY_CONFLICT";
+    public const string WorkerPaused = "PRIVACY_WORKER_PAUSED";
     public const string WorkerUnavailable = "PRIVACY_WORKER_UNAVAILABLE";
 }
 

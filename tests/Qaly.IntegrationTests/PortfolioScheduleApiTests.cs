@@ -36,6 +36,8 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
             $"/api/projects/{data.ProjectId}/portfolio-capacity?from={Uri.EscapeDataString(start.ToString("O"))}&to={Uri.EscapeDataString(end.ToString("O"))}");
         capacity.VisibilityState.Should().Be("partial_private_aggregate");
         capacity.ScoringVersion.Should().Be(PortfolioScheduleService.ScoringVersion);
+        capacity.Members.Should().NotContain(item => item.UserId == data.InactiveMemberId,
+            "inactive Organization members must never be treated as staffing capacity");
         capacity.Members.Single(item => item.UserId == data.ContributorId).HasRestrictedLoad.Should().BeTrue();
         capacity.Members.SelectMany(item => item.ProjectLoads).Should().NotContain(item => item.ProjectName == data.PrivateProjectName && !item.SourcesRestricted);
 
@@ -204,13 +206,16 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
     {
         var managerId = Guid.NewGuid();
         var contributorId = Guid.NewGuid();
+        var inactiveMemberId = Guid.NewGuid();
         var outsiderId = Guid.NewGuid();
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
         await EnsureUserAsync(db, OwnerId, "Portfolio Owner");
         await EnsureUserAsync(db, managerId, "Portfolio Manager");
         await EnsureUserAsync(db, contributorId, "Portfolio Contributor");
+        await EnsureUserAsync(db, inactiveMemberId, "Inactive Portfolio Member");
         await EnsureUserAsync(db, outsiderId, "Portfolio Outsider");
+        db.Users.Local.Single(item => item.Id == inactiveMemberId).IsActive = false;
 
         var organization = new Organization
         {
@@ -261,10 +266,12 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         db.AddRange(organization, project, privateProject, targetTask, privateLoad);
         db.OrganizationMembers.AddRange(
             new OrganizationMember { OrganizationId = organization.Id, UserId = managerId, Role = OrganizationRoleRules.OrganizationAdmin },
-            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member });
+            new OrganizationMember { OrganizationId = organization.Id, UserId = contributorId, Role = OrganizationRoleRules.Member },
+            new OrganizationMember { OrganizationId = organization.Id, UserId = inactiveMemberId, Role = OrganizationRoleRules.Member });
         db.ProjectMembers.AddRange(
             new ProjectMember { ProjectId = project.Id, UserId = managerId, Role = ProjectRoleRules.Manager },
-            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member });
+            new ProjectMember { ProjectId = project.Id, UserId = contributorId, Role = ProjectRoleRules.Member },
+            new ProjectMember { ProjectId = project.Id, UserId = inactiveMemberId, Role = ProjectRoleRules.Member });
         db.TaskAssignments.Add(new TaskAssignment
         {
             TaskItemId = privateLoad.Id,
@@ -285,9 +292,16 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
                 UserId = managerId,
                 WeeklyCapacityHours = 40m,
                 TimeZoneId = "Asia/Ho_Chi_Minh"
+            },
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = organization.Id,
+                UserId = inactiveMemberId,
+                WeeklyCapacityHours = 168m,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
             });
         await db.SaveChangesAsync();
-        return new SeededData(organization.Id, project.Id, targetTask.Id, contributorId, managerId, outsiderId, privateProjectName);
+        return new SeededData(organization.Id, project.Id, targetTask.Id, contributorId, inactiveMemberId, managerId, outsiderId, privateProjectName);
     }
 
     private HttpClient CreateClient(Guid userId)
@@ -350,6 +364,7 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
         Guid ProjectId,
         Guid TargetTaskId,
         Guid ContributorId,
+        Guid InactiveMemberId,
         Guid ManagerId,
         Guid OutsiderId,
         string PrivateProjectName);

@@ -10,6 +10,7 @@ using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.Services.Groups;
 using Qaly.Application.Services.Meetings;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Domain.Interfaces;
@@ -48,6 +49,7 @@ public partial class GroupsService : IGroupsService
     private readonly ILogger<GroupsService> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
 
     public GroupsService(
         IRepository<WorkGroup> groupRepo,
@@ -74,7 +76,8 @@ public partial class GroupsService : IGroupsService
         ILiveKitTokenService liveKitTokenService,
         ILogger<GroupsService> logger,
         IUnitOfWork unitOfWork,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        ITaskAccessPolicy taskAccessPolicy)
     {
         _groupRepo = groupRepo;
         _memberRepo = memberRepo;
@@ -101,13 +104,14 @@ public partial class GroupsService : IGroupsService
         _logger = logger;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
+        _taskAccessPolicy = taskAccessPolicy;
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Skipped sending group invitation email because token is missing. InvitationId: {InvitationId}, GroupId: {GroupId}.")]
     private static partial void LogSkippedMissingInvitationToken(ILogger logger, Guid invitationId, Guid groupId);
 
-    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}, RecipientEmail: {RecipientEmail}.")]
-    private static partial void LogCouldNotSendGroupInvitationEmail(ILogger logger, Exception ex, Guid invitationId, Guid groupId, string recipientEmail);
+    [LoggerMessage(EventId = 2, Level = LogLevel.Warning, Message = "Could not send group invitation email. InvitationId: {InvitationId}, GroupId: {GroupId}.")]
+    private static partial void LogCouldNotSendGroupInvitationEmail(ILogger logger, Exception ex, Guid invitationId, Guid groupId);
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "Could not broadcast poll updated realtime event. GroupId: {GroupId}, PollId: {PollId}.")]
     private static partial void LogCouldNotBroadcastPollUpdated(ILogger logger, Exception ex, Guid groupId, Guid pollId);
@@ -147,6 +151,7 @@ public partial class GroupsService : IGroupsService
         var totalCount = await query.CountAsync(ct);
         var groups = await query
             .OrderByDescending(group => group.UpdatedAt ?? group.CreatedAt)
+            .ThenBy(group => group.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -226,8 +231,6 @@ public partial class GroupsService : IGroupsService
         };
 
         await _groupRepo.AddAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
         await _memberRepo.AddAsync(new WorkGroupMember
         {
             WorkGroupId = group.Id,
@@ -235,8 +238,13 @@ public partial class GroupsService : IGroupsService
             Role = GroupRoleRules.Owner
         }, ct);
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(WorkGroup), group.Id.ToString(), new { group.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Create",
+            nameof(WorkGroup),
+            group.Id.ToString(),
+            new { group.Name },
+            ct);
 
         return await GetByIdAsync(group.Id, ct);
     }
@@ -266,8 +274,13 @@ public partial class GroupsService : IGroupsService
         group.Status = NormalizeGroupStatus(request.Status);
 
         await _groupRepo.UpdateAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Update", nameof(WorkGroup), groupId.ToString(), request, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Update",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            request,
+            ct);
 
         return await GetByIdAsync(groupId, ct);
     }
@@ -290,8 +303,8 @@ public partial class GroupsService : IGroupsService
 
         group.AvatarUrl = NormalizeOptional(avatarUrl);
         await _groupRepo.UpdateAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "UpdateAvatar",
             nameof(WorkGroup),
             groupId.ToString(),
@@ -332,8 +345,8 @@ public partial class GroupsService : IGroupsService
         group.BackgroundTheme = theme ?? "clean";
         group.BackgroundImageUrl = imageUrl;
         await _groupRepo.UpdateAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "UpdateBackground",
             nameof(WorkGroup),
             groupId.ToString(),
@@ -357,8 +370,13 @@ public partial class GroupsService : IGroupsService
         }
 
         await _groupRepo.DeleteAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Delete", nameof(WorkGroup), groupId.ToString(), new { group.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Delete",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new { group.Name },
+            ct);
 
         return Result.Success();
     }
@@ -396,8 +414,13 @@ public partial class GroupsService : IGroupsService
         }
 
         await _groupRepo.DeleteAsync(group, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Dissolve", nameof(WorkGroup), groupId.ToString(), new { group.Name }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Dissolve",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new { group.Name },
+            ct);
 
         return Result.Success();
     }
@@ -526,7 +549,7 @@ public partial class GroupsService : IGroupsService
 
         if (membershipRole == null || !GroupRoleRules.CanManage(membershipRole))
         {
-            return Result.Forbidden<GroupInvitationDto>("Báº¡n khÃ´ng cÃ³ quyá»n má»i thÃ nh viÃªn vÃ o nhÃ³m nÃ y.");
+            return Result.Forbidden<GroupInvitationDto>("Bạn không có quyền mời thành viên vào nhóm này.");
         }
 
         var normalizedEmail = NormalizeEmail(request.Email);
@@ -546,7 +569,7 @@ public partial class GroupsService : IGroupsService
         if (invitedUser == null)
         {
             return Result.Failure<GroupInvitationDto>(
-                "Email nÃ y chÆ°a cÃ³ tÃ i khoáº£n Qaly. Vui lÃ²ng yÃªu cáº§u ngÆ°á»i nÃ y Ä‘Äƒng kÃ½ tÃ i khoáº£n trÆ°á»›c khi má»i vÃ o nhÃ³m.",
+                "Email này chưa có tài khoản Qaly. Vui lòng yêu cầu người này đăng ký tài khoản trước khi mời vào nhóm.",
                 404);
         }
 
@@ -584,13 +607,18 @@ public partial class GroupsService : IGroupsService
         };
 
         await _invitationRepo.AddAsync(invitation, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("CreateInvitation", nameof(WorkGroup), groupId.ToString(), new
-        {
-            invitation.Id,
-            invitation.Email,
-            invitation.ExpiredAt
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CreateInvitation",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                invitation.Id,
+                invitation.Email,
+                invitation.ExpiredAt
+            },
+            ct);
 
         await NotifyInvitedExistingUserAsync(groupSummary.Name, invitation, ct);
         await SendInvitationEmailBestEffortAsync(groupSummary.Name, invitation, currentUserId.Value, ct);
@@ -635,7 +663,7 @@ public partial class GroupsService : IGroupsService
 
         if (!GroupRoleRules.CanCreatePoll(membershipRole))
         {
-            return Result.Forbidden<GroupPollDto>("Báº¡n khÃ´ng cÃ³ quyá»n táº¡o bÃ¬nh chá»n trong nhÃ³m nÃ y.");
+            return Result.Forbidden<GroupPollDto>("Bạn không có quyền tạo bình chọn trong nhóm này.");
         }
 
         var normalizedQuestion = NormalizeOptional(request.Question);
@@ -705,17 +733,45 @@ public partial class GroupsService : IGroupsService
             })
             .ToList();
 
-        await _pollOptionRepo.AddRangeAsync(options, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
-        await _auditLogService.LogAsync("CreatePoll", nameof(WorkGroup), groupId.ToString(), new
+        var pollMessageContent = string.Join('\n', new[]
         {
-            PollId = poll.Id,
-            poll.Question,
-            poll.AllowMultiple,
-            poll.ExpiredAt,
-            OptionCount = options.Count
-        }, ct);
+            $"[poll] {normalizedQuestion}",
+            $"[pollid] {poll.Id}"
+        }.Concat(normalizedOptions.Select((content, index) => $"{index + 1}. {content}")));
+
+        if (pollMessageContent.Length > 4000)
+        {
+            return Result.Failure<GroupPollDto>(
+                "Poll is too large to publish in group chat. Shorten the question or options.");
+        }
+
+        var pollMessage = new GroupMessage
+        {
+            WorkGroupId = groupId,
+            UserId = currentUserId.Value,
+            Content = pollMessageContent,
+            MessageType = "Poll"
+        };
+
+        await _pollOptionRepo.AddRangeAsync(options, ct);
+        // Poll and its visible chat card are one business operation. Persist both
+        // in the same SaveChanges call so a client can never observe an orphan
+        // poll or report success while the corresponding card is missing.
+        await _messageRepo.AddAsync(pollMessage, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "CreatePoll",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                PollId = poll.Id,
+                poll.Question,
+                poll.AllowMultiple,
+                poll.ExpiredAt,
+                OptionCount = options.Count
+            },
+            ct);
 
         return Result.Created(ToPollDto(poll, options));
     }
@@ -1001,13 +1057,18 @@ public partial class GroupsService : IGroupsService
             }, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("VotePoll", nameof(WorkGroup), groupId.ToString(), new
-        {
-            PollId = poll.Id,
-            UserId = currentUserId.Value,
-            OptionIds = deduplicatedOptionIds
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "VotePoll",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                PollId = poll.Id,
+                UserId = currentUserId.Value,
+                OptionIds = deduplicatedOptionIds
+            },
+            ct);
 
         var pollResults = await BuildPollResultsDtoAsync(poll, pollOptions, currentUserId.Value, ct);
         var updatedAt = DateTimeOffset.UtcNow;
@@ -1073,7 +1134,7 @@ public partial class GroupsService : IGroupsService
         var canClosePoll = GroupRoleRules.CanClosePoll(membershipRole, poll.CreatedByUserId == currentUserId.Value);
         if (!canClosePoll)
         {
-            return Result.Forbidden<GroupPollDto>("Báº¡n khÃ´ng cÃ³ quyá»n Ä‘Ã³ng bÃ¬nh chá»n nÃ y.");
+            return Result.Forbidden<GroupPollDto>("Bạn không có quyền đóng bình chọn này.");
         }
 
         if (poll.Status == GroupPollStatus.Closed)
@@ -1089,20 +1150,24 @@ public partial class GroupsService : IGroupsService
         poll.Status = GroupPollStatus.Closed;
         poll.ClosedAt ??= DateTimeOffset.UtcNow;
 
-        await _unitOfWork.SaveChangesAsync(ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "ClosePoll",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                PollId = poll.Id,
+                ClosedByUserId = currentUserId.Value,
+                poll.ClosedAt
+            },
+            ct);
 
         var options = await _pollOptionRepo.GetQueryable()
             .AsNoTracking()
             .Where(option => option.PollId == poll.Id)
             .OrderBy(option => option.SortOrder)
             .ToListAsync(ct);
-
-        await _auditLogService.LogAsync("ClosePoll", nameof(WorkGroup), groupId.ToString(), new
-        {
-            PollId = poll.Id,
-            ClosedByUserId = currentUserId.Value,
-            poll.ClosedAt
-        }, ct);
 
         return Result.Success(ToPollDto(poll, options));
     }
@@ -1218,14 +1283,19 @@ public partial class GroupsService : IGroupsService
             }, ct);
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AcceptInvitation", nameof(WorkGroup), invitation.GroupId.ToString(), new
-        {
-            invitation.Id,
-            invitation.Email,
-            UserId = currentUserId.Value,
-            AlreadyMember = isMember
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "AcceptInvitation",
+            nameof(WorkGroup),
+            invitation.GroupId.ToString(),
+            new
+            {
+                invitation.Id,
+                invitation.Email,
+                UserId = currentUserId.Value,
+                AlreadyMember = isMember
+            },
+            ct);
 
         return Result.Success(ToInvitationDto(invitation));
     }
@@ -1269,13 +1339,18 @@ public partial class GroupsService : IGroupsService
         }
 
         invitation.Status = GroupInvitationStatus.Rejected;
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RejectInvitation", nameof(WorkGroup), invitation.GroupId.ToString(), new
-        {
-            invitation.Id,
-            invitation.Email,
-            UserId = currentUserId.Value
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RejectInvitation",
+            nameof(WorkGroup),
+            invitation.GroupId.ToString(),
+            new
+            {
+                invitation.Id,
+                invitation.Email,
+                UserId = currentUserId.Value
+            },
+            ct);
 
         return Result.Success(ToInvitationDto(invitation));
     }
@@ -1313,8 +1388,13 @@ public partial class GroupsService : IGroupsService
 
             existing.Role = role;
             await _memberRepo.UpdateAsync(existing, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
-            await _auditLogService.LogAsync("UpdateMemberRole", nameof(WorkGroup), groupId.ToString(), new { request.UserId, role }, ct);
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "UpdateMemberRole",
+                nameof(WorkGroup),
+                groupId.ToString(),
+                new { request.UserId, role },
+                ct);
             return Result.Success();
         }
 
@@ -1325,8 +1405,13 @@ public partial class GroupsService : IGroupsService
             Role = role
         }, ct);
 
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("AddMember", nameof(WorkGroup), groupId.ToString(), new { request.UserId, role }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "AddMember",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new { request.UserId, role },
+            ct);
         await _notificationService.CreateAsync(
             request.UserId,
             $"You were added to group \"{group.Name}\".",
@@ -1385,7 +1470,7 @@ public partial class GroupsService : IGroupsService
 
         if (!GroupRoleRules.CanChangeMemberRole(currentMember.Role, member.Role))
         {
-            return Result.Forbidden("Báº¡n khÃ´ng cÃ³ quyá»n thay Ä‘á»•i vai trÃ² thÃ nh viÃªn nÃ y.");
+            return Result.Forbidden("Bạn không có quyền thay đổi vai trò thành viên này.");
         }
 
         var normalizedCurrentRole = GroupRoleRules.Normalize(member.Role);
@@ -1418,13 +1503,18 @@ public partial class GroupsService : IGroupsService
 
         member.Role = normalizedRequestedRole;
         await _memberRepo.UpdateAsync(member, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UpdateMemberRole", nameof(WorkGroup), groupId.ToString(), new
-        {
-            userId,
-            OldRole = normalizedCurrentRole,
-            NewRole = member.Role
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "UpdateMemberRole",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                userId,
+                OldRole = normalizedCurrentRole,
+                NewRole = member.Role
+            },
+            ct);
 
         return Result.Success();
     }
@@ -1465,7 +1555,7 @@ public partial class GroupsService : IGroupsService
         var isSelfAction = currentUserId.Value == userId;
         if (!GroupRoleRules.CanRemoveMember(currentMember.Role, member.Role, isSelfAction))
         {
-            return Result.Forbidden("Báº¡n khÃ´ng cÃ³ quyá»n xÃ³a thÃ nh viÃªn nÃ y.");
+            return Result.Forbidden("Bạn không có quyền xóa thành viên này.");
         }
 
         if (GroupRoleRules.Normalize(member.Role) == GroupRoleRules.Owner)
@@ -1483,13 +1573,18 @@ public partial class GroupsService : IGroupsService
         }
 
         await _memberRepo.DeleteAsync(member, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("RemoveMember", nameof(WorkGroup), groupId.ToString(), new
-        {
-            userId,
-            RemovedBy = currentUserId.Value,
-            IsSelfAction = isSelfAction
-        }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "RemoveMember",
+            nameof(WorkGroup),
+            groupId.ToString(),
+            new
+            {
+                userId,
+                RemovedBy = currentUserId.Value,
+                IsSelfAction = isSelfAction
+            },
+            ct);
 
         return Result.Success();
     }
@@ -1527,6 +1622,7 @@ public partial class GroupsService : IGroupsService
         var totalCount = await query.CountAsync(ct);
         var messages = await query
             .OrderByDescending(message => message.CreatedAt)
+            .ThenByDescending(message => message.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -2077,8 +2173,13 @@ public partial class GroupsService : IGroupsService
 
         project.SourceGroupId = groupId;
         await _projectRepo.UpdateAsync(project, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("LinkProjectToGroup", nameof(Project), project.Id.ToString(), new { groupId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "LinkProjectToGroup",
+            nameof(Project),
+            project.Id.ToString(),
+            new { groupId },
+            ct);
 
         return Result.Success();
     }
@@ -2114,8 +2215,13 @@ public partial class GroupsService : IGroupsService
 
         project.SourceGroupId = null;
         await _projectRepo.UpdateAsync(project, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("UnlinkProjectFromGroup", nameof(Project), project.Id.ToString(), new { groupId }, ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "UnlinkProjectFromGroup",
+            nameof(Project),
+            project.Id.ToString(),
+            new { groupId },
+            ct);
 
         return Result.Success();
     }
@@ -2188,74 +2294,10 @@ public partial class GroupsService : IGroupsService
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (IsSystemAdmin())
-        {
-            return true;
-        }
-
-        var project = await _projectRepo.GetQueryable()
-            .Where(item => item.Id == projectId)
-            .Select(item => new
-            {
-                item.OrganizationId,
-                OrganizationIsActive = item.Organization == null || item.Organization.IsActive,
-                OrganizationOwnerId = item.Organization != null ? (Guid?)item.Organization.OwnerId : null
-            })
-            .FirstOrDefaultAsync(ct);
-        if (project == null || !project.OrganizationIsActive)
-        {
-            return false;
-        }
-
-        if (project.OrganizationId.HasValue &&
-            project.OrganizationOwnerId != currentUserId &&
-            !await _organizationMemberRepo.GetQueryable().AnyAsync(member =>
-                member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId.Value,
-                ct))
-        {
-            return false;
-        }
-
-        return ownerId == currentUserId || await _projectMemberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == projectId && member.UserId == currentUserId.Value, ct);
-    }
+        => await _taskAccessPolicy.CanAccessProjectAsync(projectId, ownerId, ct);
 
     private async Task<bool> CanManageProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (!await CanAccessProjectAsync(projectId, ownerId, ct))
-        {
-            return false;
-        }
-
-        if (IsSystemAdmin() || ownerId == currentUserId)
-        {
-            return true;
-        }
-
-        var role = await _projectMemberRepo.GetQueryable()
-            .Where(member => member.ProjectId == projectId && member.UserId == currentUserId.Value)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(role))
-        {
-            return true;
-        }
-
-        return false;
-    }
+        => await _taskAccessPolicy.CanManageProjectAsync(projectId, ownerId, ct);
 
     public async Task<bool> CanManageGroupAsync(Guid groupId, CancellationToken ct = default)
     {
@@ -2678,7 +2720,7 @@ public partial class GroupsService : IGroupsService
             return;
         }
 
-        var message = $"Báº¡n nháº­n Ä‘Æ°á»£c lá»i má»i tham gia nhÃ³m \"{groupName}\" (háº¿t háº¡n {invitation.ExpiredAt:yyyy-MM-dd HH:mm} UTC).";
+        var message = $"Bạn nhận được lời mời tham gia nhóm \"{groupName}\" (hết hạn {invitation.ExpiredAt:yyyy-MM-dd HH:mm} UTC).";
         await _notificationService.CreateAsync(
             invitedUser.Id,
             message,
@@ -2720,7 +2762,7 @@ public partial class GroupsService : IGroupsService
         }
         catch (Exception ex)
         {
-            LogCouldNotSendGroupInvitationEmail(_logger, ex, invitation.Id, invitation.GroupId, invitation.Email);
+            LogCouldNotSendGroupInvitationEmail(_logger, ex, invitation.Id, invitation.GroupId);
         }
     }
 
@@ -2824,7 +2866,7 @@ public partial class GroupsService : IGroupsService
             .AsNoTracking()
             .Where(group => group.Id == groupId)
             .Select(group => group.Name)
-            .FirstOrDefaultAsync(ct) ?? "nhÃ³m";
+            .FirstOrDefaultAsync(ct) ?? "nhóm";
 
         var starter = await _userRepo.GetQueryable()
             .AsNoTracking()
@@ -2846,8 +2888,6 @@ public partial class GroupsService : IGroupsService
         meeting.JoinUrl = BuildInternalMeetingJoinUrl(groupId, meeting.Id);
 
         await _meetingSessionRepo.AddAsync(meeting, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-
         var meetingMessage = new GroupMessage
         {
             WorkGroupId = groupId,
@@ -2857,7 +2897,13 @@ public partial class GroupsService : IGroupsService
         };
 
         await _messageRepo.AddAsync(meetingMessage, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "StartMeeting",
+            nameof(GroupMeetingSession),
+            meeting.Id.ToString(),
+            new { groupId, meeting.RoomId, meeting.Provider },
+            ct);
 
         var dto = await ToMeetingDtoAsync(meeting, includeAccessToken: true, ct, starter);
         var broadcastDto = ToMeetingDto(meeting);
@@ -2947,7 +2993,13 @@ public partial class GroupsService : IGroupsService
             }
         }
 
-        await _unitOfWork.SaveChangesAsync(ct);
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "EndMeeting",
+            nameof(GroupMeetingSession),
+            meeting.Id.ToString(),
+            new { groupId, meeting.EndedAt },
+            ct);
 
         var dto = ToMeetingDto(meeting);
 
@@ -2958,13 +3010,13 @@ public partial class GroupsService : IGroupsService
 
     private static string BuildMeetingStartedMessage(Guid meetingId, string? joinUrl, string? starterName)
     {
-        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Má»™t thÃ nh viÃªn" : starterName.Trim();
+        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Một thành viên" : starterName.Trim();
         return string.Join(Environment.NewLine, new[]
         {
             "[meeting-started]",
             $"[meetingid] {meetingId}",
             $"[joinurl] {joinUrl}",
-            $"{displayName} Ä‘Ã£ báº¯t Ä‘áº§u cuá»™c há»p nhÃ³m. Báº¥m tham gia Ä‘á»ƒ vÃ o phÃ²ng."
+            $"{displayName} đã bắt đầu cuộc họp nhóm. Bấm tham gia để vào phòng."
         });
     }
 
@@ -3048,8 +3100,8 @@ public partial class GroupsService : IGroupsService
             .Distinct()
             .ToListAsync(ct);
 
-        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Má»™t thÃ nh viÃªn" : starterName.Trim();
-        var message = $"{displayName} Ä‘Ã£ báº¯t Ä‘áº§u cuá»™c há»p trong nhÃ³m \"{groupName}\".";
+        var displayName = string.IsNullOrWhiteSpace(starterName) ? "Một thành viên" : starterName.Trim();
+        var message = $"{displayName} đã bắt đầu cuộc họp trong nhóm \"{groupName}\".";
 
         foreach (var recipientId in recipientIds)
         {

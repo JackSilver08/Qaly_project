@@ -26,7 +26,8 @@ public class QalyDbContextFactory : IDesignTimeDbContextFactory<QalyDbContext>
         }
 
         var optionsBuilder = new DbContextOptionsBuilder<QalyDbContext>();
-        optionsBuilder.UseSqlServer(connectionString);
+        optionsBuilder.UseSqlServer(connectionString, sqlServer =>
+            sqlServer.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery));
         return new QalyDbContext(optionsBuilder.Options);
     }
 

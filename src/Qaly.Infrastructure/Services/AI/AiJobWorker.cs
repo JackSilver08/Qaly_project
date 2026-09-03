@@ -36,14 +36,28 @@ public sealed partial class AiJobWorker : BackgroundService
                     continue;
                 }
 
-                var lease = await ClaimAsync(stoppingToken);
-                if (lease == null)
+                var processed = 0;
+                var batchSize = Math.Clamp(_options.CurrentValue.BatchSize, 1, 100);
+                while (processed < batchSize && !stoppingToken.IsCancellationRequested)
                 {
-                    await DelayAsync(stoppingToken);
-                    continue;
+                    var lease = await ClaimAsync(stoppingToken);
+                    if (lease == null)
+                    {
+                        break;
+                    }
+
+                    await ProcessLeaseAsync(lease, stoppingToken);
+                    processed++;
                 }
 
-                await ProcessLeaseAsync(lease, stoppingToken);
+                if (processed == 0)
+                {
+                    await DelayAsync(stoppingToken);
+                }
+                else
+                {
+                    await Task.Yield();
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -65,51 +79,116 @@ public sealed partial class AiJobWorker : BackgroundService
         return await store.ClaimNextAsync(_workerId, LeaseDuration(), ct);
     }
 
-    private async Task ProcessLeaseAsync(AiJobLease lease, CancellationToken stoppingToken)
+    internal async Task ProcessLeaseAsync(AiJobLease lease, CancellationToken stoppingToken)
     {
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        var heartbeat = HeartbeatAsync(lease.DispatchId, heartbeatCts.Token);
+        using var processing = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var stopHeartbeat = new CancellationTokenSource();
+        var heartbeatTask = HeartbeatAsync(
+            lease.DispatchId,
+            processing,
+            stopHeartbeat.Token);
+        Exception? processingFailure = null;
+        var hostCanceled = false;
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<IAiJobProcessor>();
-            await processor.ProcessAsync(lease, _workerId, stoppingToken);
+            await processor.ProcessAsync(lease, _workerId, processing.Token);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            hostCanceled = true;
+        }
+        catch (OperationCanceledException) when (processing.IsCancellationRequested)
+        {
+            // Lease heartbeat canceled processing because ownership is uncertain.
         }
         catch (Exception ex)
         {
-            JobProcessingFailed(_logger, lease.JobId, ex);
+            processingFailure = ex;
+        }
+
+        stopHeartbeat.Cancel();
+        var heartbeat = await heartbeatTask;
+
+        if (hostCanceled)
+        {
+            await TryReleaseLeaseAsync(lease.DispatchId);
+            throw new OperationCanceledException(stoppingToken);
+        }
+
+        if (!heartbeat.LeaseRetained)
+        {
+            LeaseOwnershipLost(_logger, lease.JobId, heartbeat.Error);
+            return;
+        }
+
+        if (processingFailure != null)
+        {
+            JobProcessingFailed(_logger, lease.JobId, processingFailure);
             using var scope = _scopeFactory.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IAiJobDispatchStore>();
             await store.AbandonLeaseAsync(
                 lease.DispatchId,
                 _workerId,
                 AiErrorCodes.ProviderUnavailable,
-                ex.Message,
+                processingFailure.Message,
                 stoppingToken);
-        }
-        finally
-        {
-            heartbeatCts.Cancel();
-            try
-            {
-                await heartbeat;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when processing completes before the next heartbeat.
-            }
         }
     }
 
-    private async Task HeartbeatAsync(Guid dispatchId, CancellationToken ct)
+    private async Task<HeartbeatResult> HeartbeatAsync(
+        Guid dispatchId,
+        CancellationTokenSource processing,
+        CancellationToken stopToken)
     {
         var interval = TimeSpan.FromSeconds(Math.Max(1, _options.CurrentValue.HeartbeatSeconds));
         using var timer = new PeriodicTimer(interval);
-        while (await timer.WaitForNextTickAsync(ct))
+        try
         {
+            while (await timer.WaitForNextTickAsync(stopToken))
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var store = scope.ServiceProvider.GetRequiredService<IAiJobDispatchStore>();
+                if (await store.RenewLeaseAsync(
+                        dispatchId,
+                        _workerId,
+                        LeaseDuration(),
+                        stopToken))
+                {
+                    continue;
+                }
+
+                processing.Cancel();
+                return new HeartbeatResult(false, null);
+            }
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            return new HeartbeatResult(true, null);
+        }
+        catch (Exception exception)
+        {
+            processing.Cancel();
+            return new HeartbeatResult(false, exception);
+        }
+
+        return new HeartbeatResult(true, null);
+    }
+
+    private async Task TryReleaseLeaseAsync(Guid dispatchId)
+    {
+        try
+        {
+            using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             using var scope = _scopeFactory.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IAiJobDispatchStore>();
-            if (!await store.RenewLeaseAsync(dispatchId, _workerId, LeaseDuration(), ct)) return;
+            await store.ReleaseLeaseAsync(dispatchId, _workerId, recoveryTimeout.Token);
+        }
+        catch (Exception exception)
+        {
+            LeaseReleaseFailed(_logger, dispatchId, exception);
         }
     }
 
@@ -130,4 +209,12 @@ public sealed partial class AiJobWorker : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "AI job {JobId} processing failed unexpectedly.")]
     private static partial void JobProcessingFailed(ILogger logger, Guid jobId, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "AI job {JobId} stopped because its durable lease could not be renewed or was lost.")]
+    private static partial void LeaseOwnershipLost(ILogger logger, Guid jobId, Exception? exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not release canceled AI job dispatch {DispatchId}; lease-expiry recovery may be required.")]
+    private static partial void LeaseReleaseFailed(ILogger logger, Guid dispatchId, Exception exception);
+
+    private sealed record HeartbeatResult(bool LeaseRetained, Exception? Error);
 }

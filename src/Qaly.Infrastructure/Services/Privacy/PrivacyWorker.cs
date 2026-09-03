@@ -36,14 +36,28 @@ public sealed partial class PrivacyWorker : BackgroundService
                     continue;
                 }
 
-                var lease = await ClaimAsync(stoppingToken);
-                if (lease == null)
+                var processed = 0;
+                var batchSize = Math.Clamp(_options.CurrentValue.BatchSize, 1, 100);
+                while (processed < batchSize && !stoppingToken.IsCancellationRequested)
                 {
-                    await DelayAsync(stoppingToken);
-                    continue;
+                    var lease = await ClaimAsync(stoppingToken);
+                    if (lease == null)
+                    {
+                        break;
+                    }
+
+                    await ProcessLeaseAsync(lease, stoppingToken);
+                    processed++;
                 }
 
-                await ProcessLeaseAsync(lease, stoppingToken);
+                if (processed == 0)
+                {
+                    await DelayAsync(stoppingToken);
+                }
+                else
+                {
+                    await Task.Yield();
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -66,54 +80,116 @@ public sealed partial class PrivacyWorker : BackgroundService
         return await store.ClaimNextAsync(_workerId, LeaseDuration(), ct);
     }
 
-    private async Task ProcessLeaseAsync(PrivacyWorkLease lease, CancellationToken stoppingToken)
+    internal async Task ProcessLeaseAsync(PrivacyWorkLease lease, CancellationToken stoppingToken)
     {
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        var heartbeat = HeartbeatAsync(lease, heartbeatCts.Token);
+        using var processing = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        using var stopHeartbeat = new CancellationTokenSource();
+        var heartbeatTask = HeartbeatAsync(
+            lease,
+            processing,
+            stopHeartbeat.Token);
+        Exception? processingFailure = null;
+        var hostCanceled = false;
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<IPrivacyWorkProcessor>();
-            await processor.ProcessAsync(lease, _workerId, stoppingToken);
+            await processor.ProcessAsync(lease, _workerId, processing.Token);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            hostCanceled = true;
+        }
+        catch (OperationCanceledException) when (processing.IsCancellationRequested)
+        {
+            // Lease heartbeat canceled processing because ownership is uncertain.
         }
         catch (Exception ex)
         {
-            WorkProcessingFailed(_logger, lease.Kind, lease.WorkId, ex);
+            processingFailure = ex;
+        }
+
+        stopHeartbeat.Cancel();
+        var heartbeat = await heartbeatTask;
+
+        if (hostCanceled)
+        {
+            await TryReleaseLeaseAsync(lease);
+            throw new OperationCanceledException(stoppingToken);
+        }
+
+        if (!heartbeat.LeaseRetained)
+        {
+            LeaseOwnershipLost(_logger, lease.Kind, lease.WorkId, heartbeat.Error);
+            return;
+        }
+
+        if (processingFailure != null)
+        {
+            WorkProcessingFailed(_logger, lease.Kind, lease.WorkId, processingFailure);
             using var scope = _scopeFactory.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IPrivacyWorkStore>();
             await store.AbandonLeaseAsync(
                 lease,
                 _workerId,
                 PrivacyErrorCodes.WorkerUnavailable,
-                ex.Message,
+                processingFailure.Message,
                 stoppingToken);
-        }
-        finally
-        {
-            heartbeatCts.Cancel();
-            try
-            {
-                await heartbeat;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected after the work item reaches a terminal state.
-            }
         }
     }
 
-    private async Task HeartbeatAsync(PrivacyWorkLease lease, CancellationToken ct)
+    private async Task<HeartbeatResult> HeartbeatAsync(
+        PrivacyWorkLease lease,
+        CancellationTokenSource processing,
+        CancellationToken stopToken)
     {
-        var interval = TimeSpan.FromSeconds(Math.Max(1, _options.CurrentValue.LeaseSeconds / 3));
+        var interval = TimeSpan.FromSeconds(Math.Max(1, _options.CurrentValue.HeartbeatSeconds));
         using var timer = new PeriodicTimer(interval);
-        while (await timer.WaitForNextTickAsync(ct))
+        try
         {
+            while (await timer.WaitForNextTickAsync(stopToken))
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var store = scope.ServiceProvider.GetRequiredService<IPrivacyWorkStore>();
+                if (await store.RenewLeaseAsync(
+                        lease,
+                        _workerId,
+                        LeaseDuration(),
+                        stopToken))
+                {
+                    continue;
+                }
+
+                processing.Cancel();
+                return new HeartbeatResult(false, null);
+            }
+        }
+        catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+        {
+            return new HeartbeatResult(true, null);
+        }
+        catch (Exception exception)
+        {
+            processing.Cancel();
+            return new HeartbeatResult(false, exception);
+        }
+
+        return new HeartbeatResult(true, null);
+    }
+
+    private async Task TryReleaseLeaseAsync(PrivacyWorkLease lease)
+    {
+        try
+        {
+            using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             using var scope = _scopeFactory.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<IPrivacyWorkStore>();
-            if (!await store.RenewLeaseAsync(lease, _workerId, LeaseDuration(), ct))
-            {
-                return;
-            }
+            await store.ReleaseLeaseAsync(lease, _workerId, recoveryTimeout.Token);
+        }
+        catch (Exception exception)
+        {
+            LeaseReleaseFailed(_logger, lease.Kind, lease.WorkId, exception);
         }
     }
 
@@ -134,4 +210,12 @@ public sealed partial class PrivacyWorker : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Privacy work {Kind}/{WorkId} failed.")]
     private static partial void WorkProcessingFailed(ILogger logger, string kind, Guid workId, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Privacy work {Kind}/{WorkId} stopped because its durable lease could not be renewed or was lost.")]
+    private static partial void LeaseOwnershipLost(ILogger logger, string kind, Guid workId, Exception? exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not release canceled privacy work {Kind}/{WorkId}; lease-expiry recovery may be required.")]
+    private static partial void LeaseReleaseFailed(ILogger logger, string kind, Guid workId, Exception exception);
+
+    private sealed record HeartbeatResult(bool LeaseRetained, Exception? Error);
 }

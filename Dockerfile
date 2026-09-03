@@ -6,6 +6,7 @@
 # ---- Stage 1: Base runtime ----
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
+ENV ASPNETCORE_HTTP_PORTS=5000
 EXPOSE 5000
 
 # ---- Stage 2: Development (hot reload) ----
@@ -54,9 +55,14 @@ FROM base AS production
 WORKDIR /app
 
 COPY --from=build --chown=$APP_UID:$APP_UID /app/publish .
-RUN mkdir -p /app/.keys /app/dp-keys /app/uploads \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/.keys /app/dp-keys /app/uploads \
     && chown -R $APP_UID:$APP_UID /app/.keys /app/dp-keys /app/uploads
 
 # Official .NET runtime images expose a built-in non-root application UID.
 USER $APP_UID
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl --fail --silent --show-error http://127.0.0.1:5000/health/live || exit 1
 ENTRYPOINT ["dotnet", "Qaly.Web.dll"]

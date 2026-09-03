@@ -4,6 +4,7 @@ using Qaly.Application.Common.Mappings;
 using Qaly.Application.Common.Models;
 using Qaly.Application.DTOs.Attachment;
 using Qaly.Application.Services.Notifications;
+using Qaly.Application.Services.Tasks;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Interfaces;
 
@@ -11,11 +12,13 @@ namespace Qaly.Application.Services;
 
 public class AttachmentService : IAttachmentService
 {
+    private const long MaxUploadBytes = 25_000_000;
     private readonly IRepository<TaskAttachment> _attachmentRepo;
     private readonly IRepository<PhysicalFile> _physicalFileRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
-    private readonly IRepository<OrganizationMember> _organizationMemberRepo;
+    private readonly ITaskAccessPolicy _taskAccessPolicy;
+    private readonly IProjectRoleCatalog _roleCatalog;
     private readonly IFileStorageService _fileStorageService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -27,7 +30,8 @@ public class AttachmentService : IAttachmentService
         IRepository<PhysicalFile> physicalFileRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
-        IRepository<OrganizationMember> organizationMemberRepo,
+        ITaskAccessPolicy taskAccessPolicy,
+        IProjectRoleCatalog roleCatalog,
         IFileStorageService fileStorageService,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -38,7 +42,8 @@ public class AttachmentService : IAttachmentService
         _physicalFileRepo = physicalFileRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
-        _organizationMemberRepo = organizationMemberRepo;
+        _taskAccessPolicy = taskAccessPolicy;
+        _roleCatalog = roleCatalog;
         _fileStorageService = fileStorageService;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -79,10 +84,18 @@ public class AttachmentService : IAttachmentService
             return Result.Forbidden<TaskAttachmentDto>();
         }
 
-        if (string.IsNullOrWhiteSpace(fileName) || fileSize <= 0)
+        var safeFileName = Path.GetFileName(fileName?.Trim());
+        var safeContentType = string.IsNullOrWhiteSpace(contentType) ? null : contentType.Trim();
+        if (string.IsNullOrWhiteSpace(safeFileName) || fileSize <= 0)
         {
             return Result.Failure<TaskAttachmentDto>("A valid file is required.");
         }
+        if (safeFileName.Length > 500)
+            return Result.Failure<TaskAttachmentDto>("File name cannot exceed 500 characters.", 400);
+        if (safeContentType?.Length > 100)
+            return Result.Failure<TaskAttachmentDto>("Content type cannot exceed 100 characters.", 400);
+        if (fileSize > MaxUploadBytes)
+            return Result.Failure<TaskAttachmentDto>("File cannot exceed 25 MB.", 413);
 
         var task = await LoadTaskAsync(taskItemId, ct);
         if (task == null)
@@ -90,14 +103,29 @@ public class AttachmentService : IAttachmentService
             return Result.NotFound<TaskAttachmentDto>();
         }
 
-        if (!await CanAccessTaskAsync(task, ct))
+        if (!await _taskAccessPolicy.CanContributeToTaskAsync(task, ct))
         {
             return Result.Forbidden<TaskAttachmentDto>();
         }
 
-        // Copy content stream to MemoryStream to calculate hash and seek
+        // Copy through a bounded buffer. The caller-provided metadata is never authoritative for
+        // quota, deduplication or storage accounting.
         using var ms = new MemoryStream();
-        await content.CopyToAsync(ms, ct);
+        var buffer = new byte[81920];
+        long actualSize = 0;
+        while (true)
+        {
+            var read = await content.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (read == 0) break;
+            actualSize += read;
+            if (actualSize > MaxUploadBytes)
+                return Result.Failure<TaskAttachmentDto>("File cannot exceed 25 MB.", 413);
+            await ms.WriteAsync(buffer.AsMemory(0, read), ct);
+        }
+        if (actualSize <= 0)
+            return Result.Failure<TaskAttachmentDto>("A valid file is required.", 400);
+        if (actualSize != fileSize)
+            return Result.Failure<TaskAttachmentDto>("File size metadata does not match the uploaded content.", 400);
         ms.Position = 0;
 
         // Calculate SHA-256 hash
@@ -110,6 +138,7 @@ public class AttachmentService : IAttachmentService
         var physicalFile = await _physicalFileRepo.GetQueryable()
             .FirstOrDefaultAsync(f => f.ContentHash == contentHash, ct);
 
+        string? newlyStoredPath = null;
         if (physicalFile != null)
         {
             physicalFile.ReferenceCount++;
@@ -117,16 +146,16 @@ public class AttachmentService : IAttachmentService
         }
         else
         {
-            var storedPath = await _fileStorageService.UploadAsync(ms, fileName, contentType, ct);
+            var storedPath = await _fileStorageService.UploadAsync(ms, safeFileName, safeContentType ?? "application/octet-stream", ct);
+            newlyStoredPath = storedPath;
             physicalFile = new PhysicalFile
             {
                 ContentHash = contentHash,
                 FilePath = storedPath,
-                FileSize = fileSize,
+                FileSize = actualSize,
                 ReferenceCount = 1
             };
             await _physicalFileRepo.AddAsync(physicalFile, ct);
-            await _unitOfWork.SaveChangesAsync(ct);
         }
 
         var attachment = new TaskAttachment
@@ -134,16 +163,40 @@ public class AttachmentService : IAttachmentService
             TaskItemId = taskItemId,
             Scope = "Task",
             UploadedById = currentUserId.Value,
-            FileName = Path.GetFileName(fileName),
-            ContentType = string.IsNullOrWhiteSpace(contentType) ? null : contentType,
+            FileName = safeFileName,
+            ContentType = safeContentType,
             PhysicalFileId = physicalFile.Id,
             PhysicalFile = physicalFile
         };
 
-        await _attachmentRepo.AddAsync(attachment, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Create", nameof(TaskAttachment), attachment.Id.ToString(), new { taskItemId, attachment.FileName, contentHash }, ct);
-
+        try
+        {
+            await _attachmentRepo.AddAsync(attachment, ct);
+            // PhysicalFile/reference count, logical attachment and audit evidence are one database commit.
+            await _unitOfWork.SaveChangesWithAuditAsync(
+                _auditLogService,
+                "Create",
+                nameof(TaskAttachment),
+                attachment.Id.ToString(),
+                new { taskItemId, attachment.FileName, contentHash },
+                ct);
+        }
+        catch
+        {
+            if (newlyStoredPath != null)
+            {
+                try
+                {
+                    await _fileStorageService.DeleteAsync(newlyStoredPath, CancellationToken.None);
+                }
+                catch
+                {
+                    // Preserve the authoritative database error. Storage reconciliation can remove
+                    // an unreferenced blob; never turn the failed database write into a success.
+                }
+            }
+            throw;
+        }
         var saved = await _attachmentRepo.GetQueryable()
             .Include(item => item.UploadedBy)
             .Include(item => item.EvidenceReviewedBy)
@@ -180,8 +233,8 @@ public class AttachmentService : IAttachmentService
         }
 
         await _attachmentRepo.UpdateAsync(attachment, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "UpdateEvidenceFlag",
             nameof(TaskAttachment),
             attachment.Id.ToString(),
@@ -215,14 +268,19 @@ public class AttachmentService : IAttachmentService
             return Result.Failure<TaskAttachmentDto>("Attachment is not marked as evidence.", 400);
         }
 
+        if (reviewNote?.Trim().Length > 1000)
+        {
+            return Result.Failure<TaskAttachmentDto>("Review note cannot exceed 1,000 characters.", 400);
+        }
+
         attachment.EvidenceApprovalStatus = approve ? "Approved" : "Rejected";
         attachment.EvidenceReviewedById = currentUserId.Value;
         attachment.EvidenceReviewedAt = DateTimeOffset.UtcNow;
         attachment.EvidenceReviewNote = string.IsNullOrWhiteSpace(reviewNote) ? null : reviewNote.Trim();
 
         await _attachmentRepo.UpdateAsync(attachment, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync(
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
             "ReviewEvidence",
             nameof(TaskAttachment),
             attachment.Id.ToString(),
@@ -243,6 +301,7 @@ public class AttachmentService : IAttachmentService
     public async Task<Result> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var attachment = await _attachmentRepo.GetQueryable()
+            .Include(item => item.PhysicalFile)
             .Include(item => item.TaskItem)
                 .ThenInclude(task => task!.Project)
             .FirstOrDefaultAsync(item => item.Id == id, ct);
@@ -252,14 +311,37 @@ public class AttachmentService : IAttachmentService
             return Result.Failure("Attachment was not found.", 404);
         }
 
-        if (attachment.TaskItem == null || !await CanAccessTaskAsync(attachment.TaskItem, ct))
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null || attachment.TaskItem == null ||
+            !await CanAccessTaskAsync(attachment.TaskItem, ct))
+        {
+            return Result.Failure("Access denied.", 403);
+        }
+
+        var canDeleteOwn = attachment.UploadedById == currentUserId &&
+            await _taskAccessPolicy.CanContributeToTaskAsync(attachment.TaskItem, ct);
+        var canManageProject = await _taskAccessPolicy.CanManageProjectAsync(
+            attachment.TaskItem.ProjectId,
+            attachment.TaskItem.Project.OwnerId,
+            ct);
+        if (!canDeleteOwn && !canManageProject)
         {
             return Result.Failure("Access denied.", 403);
         }
 
         await _attachmentRepo.DeleteAsync(attachment, ct);
-        await _unitOfWork.SaveChangesAsync(ct);
-        await _auditLogService.LogAsync("Delete", nameof(TaskAttachment), id.ToString(), new { attachment.TaskItemId, attachment.FileName }, ct);
+        if (attachment.PhysicalFile != null)
+        {
+            attachment.PhysicalFile.ReferenceCount = Math.Max(0, attachment.PhysicalFile.ReferenceCount - 1);
+            await _physicalFileRepo.UpdateAsync(attachment.PhysicalFile, ct);
+        }
+        await _unitOfWork.SaveChangesWithAuditAsync(
+            _auditLogService,
+            "Delete",
+            nameof(TaskAttachment),
+            id.ToString(),
+            new { attachment.TaskItemId, attachment.FileName },
+            ct);
 
         return Result.Success();
     }
@@ -295,10 +377,28 @@ public class AttachmentService : IAttachmentService
             return;
         }
 
+        var currentProjectMemberIds = await _memberRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(member => member.ProjectId == task.ProjectId)
+            .Select(member => member.UserId)
+            .ToHashSetAsync(ct);
+
+        bool IsCurrentProjectParticipant(Guid userId)
+            => task.Project.OwnerId == userId || currentProjectMemberIds.Contains(userId);
+
+        bool CanReceivePrivateTaskNotification(Guid userId)
+            => !task.IsPrivate ||
+               task.Project.OwnerId == userId ||
+               task.ReporterId == userId ||
+               task.AssigneeId == userId ||
+               task.Assignees.Any(assignment => assignment.UserId == userId);
+
         var recipientIds = new[] { attachment.UploadedById, task.ReporterId }
             .Concat(task.AssigneeId.HasValue ? [task.AssigneeId.Value] : [])
             .Concat(task.Assignees.Select(assignment => assignment.UserId))
             .Where(userId => userId != reviewerId)
+            .Where(IsCurrentProjectParticipant)
+            .Where(CanReceivePrivateTaskNotification)
             .Distinct()
             .ToList();
 
@@ -318,84 +418,10 @@ public class AttachmentService : IAttachmentService
     }
 
     private async Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (task.Project == null)
-        {
-            return false;
-        }
-
-        if (task.Project.Organization != null && !task.Project.Organization.IsActive)
-        {
-            return false;
-        }
-
-        if (IsAdmin() ||
-            task.ReporterId == currentUserId ||
-            task.AssigneeId == currentUserId ||
-            task.Project.OwnerId == currentUserId)
-        {
-            return true;
-        }
-
-        if (task.IsPrivate)
-        {
-            return false;
-        }
-
-        return await _memberRepo.GetQueryable()
-            .AnyAsync(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId, ct);
-    }
+        => await _taskAccessPolicy.CanAccessTaskAsync(task, ct);
 
     private async Task<bool> CanManageTaskAsync(TaskItem task, CancellationToken ct)
-    {
-        var currentUserId = _currentUserService.UserId;
-        if (currentUserId == null)
-        {
-            return false;
-        }
-
-        if (task.Project == null)
-        {
-            return false;
-        }
-
-        if (IsAdmin() ||
-            task.Project.OwnerId == currentUserId ||
-            task.ReporterId == currentUserId ||
-            task.AssigneeId == currentUserId ||
-            task.Assignees.Any(assignment => assignment.UserId == currentUserId))
-        {
-            return true;
-        }
-
-        var canManageProject = await _memberRepo.GetQueryable()
-            .AnyAsync(member =>
-                member.ProjectId == task.ProjectId &&
-                member.UserId == currentUserId &&
-                ProjectRoleRules.CanManageProject(member.Role), ct);
-        if (canManageProject)
-        {
-            return true;
-        }
-
-        if (!task.Project.OrganizationId.HasValue)
-        {
-            return false;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == task.Project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
-    }
+        => await _taskAccessPolicy.CanManageTaskAsync(task, ct);
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
     {
@@ -405,12 +431,12 @@ public class AttachmentService : IAttachmentService
             return false;
         }
 
-        if (project.Organization != null && !project.Organization.IsActive)
+        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
         {
             return false;
         }
 
-        if (IsAdmin() || project.OwnerId == currentUserId)
+        if (await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct))
         {
             return true;
         }
@@ -419,29 +445,18 @@ public class AttachmentService : IAttachmentService
             .Where(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId)
             .Select(member => member.Role)
             .FirstOrDefaultAsync(ct);
-        if (ProjectRoleRules.CanManageProject(projectRole))
-        {
-            return true;
-        }
-
-        if (!project.OrganizationId.HasValue)
-        {
-            return false;
-        }
-
-        var organizationRole = await _organizationMemberRepo.GetQueryable()
-            .Where(member => member.OrganizationId == project.OrganizationId.Value && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-
-        return OrganizationRoleRules.CanManageOrganization(organizationRole);
+        var resolvedRole = await _roleCatalog.ResolveAsync(projectRole, project.OrganizationId, ct);
+        return resolvedRole != null && ProjectPermissionRules.Resolve(
+            resolvedRole.BaseRole,
+            isOwner: false,
+            isSystemAdmin: false).CanReviewEvidence;
     }
-
-    private bool IsAdmin()
-        => string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
 
     public async Task<Result<IReadOnlyList<DuplicateFileDto>>> GetDuplicatesAsync(CancellationToken ct = default)
     {
+        if (!SystemRoleRules.IsAdmin(_currentUserService.Role))
+            return Result.Forbidden<IReadOnlyList<DuplicateFileDto>>();
+
         var attachments = await _attachmentRepo.GetQueryable()
             .Include(a => a.PhysicalFile)
             .ToListAsync(ct);
@@ -484,6 +499,7 @@ public class AttachmentService : IAttachmentService
             .DistinctBy(file => file.Id)
             .ToList();
         var physicalFilesByActualHash = new Dictionary<string, List<PhysicalFile>>(StringComparer.OrdinalIgnoreCase);
+        var scanFailures = 0;
 
         foreach (var file in physicalFiles)
         {
@@ -502,8 +518,15 @@ public class AttachmentService : IAttachmentService
             }
             catch
             {
-                continue;
+                scanFailures++;
             }
+        }
+
+        if (scanFailures > 0)
+        {
+            return Result.Failure<IReadOnlyList<DuplicateFileDto>>(
+                $"Không thể kiểm tra đầy đủ file trùng lặp vì {scanFailures} file vật lý không đọc được.",
+                503);
         }
 
         foreach (var hashGroup in physicalFilesByActualHash.Values.Where(group => group.Count > 1))
@@ -549,13 +572,20 @@ public class AttachmentService : IAttachmentService
 
     public async Task<Result<DeduplicateResultDto>> DeduplicateAsync(CancellationToken ct = default)
     {
+        if (!SystemRoleRules.IsAdmin(_currentUserService.Role))
+            return Result.Forbidden<DeduplicateResultDto>();
+
         var physicalFiles = await _physicalFileRepo.GetQueryable().ToListAsync(ct);
         var filesByActualHash = new Dictionary<string, List<PhysicalFile>>(StringComparer.OrdinalIgnoreCase);
 
         int totalProcessed = 0;
         int totalMerged = 0;
         int totalHashUpdates = 0;
+        int scanFailures = 0;
+        int cleanupFailures = 0;
         long bytesSaved = 0;
+        var warnings = new List<string>();
+        var obsoleteFiles = new List<PhysicalFile>();
 
         foreach (var file in physicalFiles)
         {
@@ -567,6 +597,7 @@ public class AttachmentService : IAttachmentService
             }
             catch
             {
+                scanFailures++;
                 continue;
             }
 
@@ -588,6 +619,9 @@ public class AttachmentService : IAttachmentService
                 .ToList();
 
             var original = sorted.First();
+            var canonicalReferenceCount = await _attachmentRepo.GetQueryable()
+                .IgnoreQueryFilters()
+                .CountAsync(attachment => attachment.PhysicalFileId == original.Id, ct);
             if (!string.Equals(original.ContentHash, hashGroup.Key, StringComparison.OrdinalIgnoreCase))
             {
                 original.ContentHash = hashGroup.Key;
@@ -609,22 +643,14 @@ public class AttachmentService : IAttachmentService
                     await _attachmentRepo.UpdateAsync(att, ct);
                 }
 
-                original.ReferenceCount += attachmentsToUpdate.Count;
-                await _physicalFileRepo.UpdateAsync(original, ct);
-
-                try
-                {
-                    await _fileStorageService.DeleteAsync(duplicate.FilePath, ct);
-                }
-                catch
-                {
-                    // Ignore storage deletion errors
-                }
-
-                bytesSaved += duplicate.FileSize;
+                canonicalReferenceCount += attachmentsToUpdate.Count;
                 await _physicalFileRepo.HardDeleteAsync(duplicate, ct);
+                obsoleteFiles.Add(duplicate);
                 totalMerged++;
             }
+
+            original.ReferenceCount = canonicalReferenceCount;
+            await _physicalFileRepo.UpdateAsync(original, ct);
         }
 
         if (totalMerged > 0 || totalHashUpdates > 0)
@@ -632,7 +658,34 @@ public class AttachmentService : IAttachmentService
             await _unitOfWork.SaveChangesAsync(ct);
         }
 
-        return Result.Success(new DeduplicateResultDto(totalProcessed, totalMerged, bytesSaved));
+        // Delete blobs only after the canonical database graph commits. A storage failure now leaves
+        // an orphan eligible for reconciliation, never a live attachment pointing at a missing file.
+        foreach (var obsoleteFile in obsoleteFiles)
+        {
+            try
+            {
+                await _fileStorageService.DeleteAsync(obsoleteFile.FilePath, CancellationToken.None);
+                bytesSaved += obsoleteFile.FileSize;
+            }
+            catch
+            {
+                cleanupFailures++;
+                warnings.Add($"File vật lý {obsoleteFile.Id} đã hợp nhất trong dữ liệu nhưng chưa xóa được khỏi storage.");
+            }
+        }
+
+        if (scanFailures > 0)
+        {
+            warnings.Add($"Bỏ qua {scanFailures} file vật lý không đọc được; các file này chưa được kết luận là trùng lặp.");
+        }
+
+        return Result.Success(new DeduplicateResultDto(
+            totalProcessed,
+            totalMerged,
+            bytesSaved,
+            scanFailures,
+            cleanupFailures,
+            warnings));
     }
 
     private static async Task<string> ComputeSha256Async(Stream content, CancellationToken ct)
@@ -644,7 +697,13 @@ public class AttachmentService : IAttachmentService
 
     public async Task<Result<StorageStatsDto>> GetStorageStatsAsync(CancellationToken ct = default)
     {
-        var files = await _physicalFileRepo.GetQueryable().AsNoTracking().ToListAsync(ct);
+        if (!SystemRoleRules.IsAdmin(_currentUserService.Role))
+            return Result.Forbidden<StorageStatsDto>();
+
+        var files = await _physicalFileRepo.GetQueryable()
+            .AsNoTracking()
+            .Where(file => file.ReferenceCount > 0)
+            .ToListAsync(ct);
         long totalBytes = files.Sum(f => f.FileSize);
         int totalFileCount = files.Count;
 
@@ -667,7 +726,7 @@ public class AttachmentService : IAttachmentService
             totalBytes,
             totalBytes, // For demo simplicity, we set AttachmentBytes to TotalBytes since attachments are the primary storage usage
             totalFileCount,
-            archivedProjectAttachments.Count
+            archivedPhysicalFileIds.Count
         ));
     }
 

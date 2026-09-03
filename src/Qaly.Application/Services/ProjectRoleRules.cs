@@ -121,7 +121,6 @@ public static class ProjectRoleRules
 
         if (string.Equals(normalized, Member, StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "Thanh vien", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalized, "ThÃ nh viÃªn", StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "Thành viên", StringComparison.OrdinalIgnoreCase))
             return Member;
 
