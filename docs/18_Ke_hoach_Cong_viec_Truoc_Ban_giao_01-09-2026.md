@@ -33,21 +33,22 @@ và toàn bộ hạ tầng kiểm thử.
 
 ---
 
-## 2. Trạng thái nền (đã đo ngày 29/08)
+## 2. Trạng thái kiểm thử (đo lại ngày 03/09)
 
 | Hạng mục | Kết quả | Ghi chú |
 | --- | --- | --- |
-| Backend unit | ✅ 595/595 pass | |
-| Frontend unit | ✅ 155/155 pass | Lớp `tests/client/` vừa được dựng |
+| Backend unit | ✅ 596/596 pass | Có hồi quy tài khoản bị vô hiệu hóa |
+| Frontend unit | ✅ 168/168 pass | 10 file spec, gồm `github-api` và RBAC thành viên |
 | Typecheck + Build FE | ✅ Pass | |
 | E2E `--workers=1` | ✅ Pass | Đã sửa 7 spec hỏng |
 | E2E 4 worker | ⚠️ 61 pass / 6 fail | **Cả 6 đều pass khi chạy tuần tự → flaky do song song, không phải lỗi chức năng** |
-| Integration | ✅ 166/166 pass | Đã chạy 29/08 |
-| Web feature | ✅ 38/38 pass | Đã chạy 29/08 |
+| E2E `E2E_WORKERS=2` | ✅ 76/76 pass | Cấu hình CI chính thức, 0 fail / 0 skip |
+| Integration | ✅ 166/166 pass | Line coverage 49,79%, vượt ngưỡng 16% |
+| Web feature | ✅ 39/39 pass | Đã chạy 03/09 |
 | Dark theme | ✅ 6/6 pass | 12 route + mobile + overlay + chi tiết dự án + họp/poll |
 | Console trình duyệt | ✅ 3/3 pass | Đã mở rộng từ 5 lên 12 route |
 | Responsive 1440/768/390 | ✅ 4/4 pass | Spec mới `responsive-audit.spec.ts`, không có tràn ngang |
-| Checklist QA theo module | ◐ 42/59 tick | 16 mục còn lại cần người thao tác tay |
+| Checklist QA theo module | ◐ 50/61 tick | 3.1, 3.2, 3.7 đã hoàn tất; còn 10 mục ☐ ngoài phạm vi Gia Long |
 
 ### Lỗi đã sửa sẵn (không cần làm lại, chỉ cần verify)
 
@@ -183,15 +184,15 @@ Mã công việc: `CK` Chí Khang · `QB` Quốc Bảo · `VM` Viết Minh · `G
 
 ### 4.4 Gia Long — Quản trị / Cài đặt / Hạ tầng kiểm thử
 
-| Mã | Công việc | Tiêu chí hoàn thành | Hạn |
-| --- | --- | --- | --- |
-| GL-1 | **Chạy lại Integration + Web feature test**, ghi số liệu vào tài liệu 17 mục 2 | 0 fail; coverage integration ≥ 16% line | **29/08** |
-| GL-2 | **Ổn định E2E chạy song song** — 6 spec flaky ở 4 worker (đã xác nhận pass khi `--workers=1`) | Chạy `npm run test:e2e` 2 lần liên tiếp đều 0 fail, hoặc chốt hạ `E2E_WORKERS=2` trong CI kèm lý do | 31/08 |
-| GL-3 | Thêm `playwright-report/` vào `.gitignore` + `git rm -r --cached playwright-report` | `git status` sạch sau khi chạy E2E | 29/08 |
-| GL-4 | Bỏ emoji `SettingsPage.vue` (8); dark theme `GitHubProjectManagement.vue` (10) | Không còn emoji; theme đúng | 30/08 |
-| GL-5 | `aria-label`: `PrivacySettingsTab` (8), `OrganizationsPage` (5), `OrganizationUsersPage` (4) | Mọi nút icon có nhãn | 31/08 |
-| GL-6 | Unit test `utils/github-api.ts` | ≥ 8 test | 31/08 |
-| GL-7 | Kiểm thử checklist mục 3.1, 3.2, 3.7 (Xác thực, RBAC, GitHub) | Tick hết checklist | 31/08 |
+| Mã | Công việc | Tiêu chí hoàn thành | Hạn | Trạng thái |
+| --- | --- | --- | --- | --- |
+| GL-1 | **Chạy lại Integration + Web feature test**, ghi số liệu vào tài liệu 17 mục 2 | 0 fail; coverage integration ≥ 16% line | **29/08** | ☑ **Xong 03/09** — 166/166 integration, coverage 49,79%; 39/39 web feature |
+| GL-2 | **Ổn định E2E chạy song song** — 6 spec flaky ở 4 worker (đã xác nhận pass khi `--workers=1`) | Chạy `npm run test:e2e` 2 lần liên tiếp đều 0 fail, hoặc chốt hạ `E2E_WORKERS=2` trong CI kèm lý do | 31/08 | ☑ **Xong 03/09** — CI khóa 2 worker; lượt cuối 76/76 pass |
+| GL-3 | Thêm `playwright-report/` vào `.gitignore` + `git rm -r --cached playwright-report` | `git status` sạch sau khi chạy E2E | 29/08 | ☑ **Xong 03/09** — artifact đã bỏ khỏi index và không tái xuất hiện sau E2E |
+| GL-4 | Bỏ emoji `SettingsPage.vue` (8); dark theme `GitHubProjectManagement.vue` (10) | Không còn emoji; theme đúng | 30/08 | ☑ **Xong 03/09** — dùng Lucide icon và token theme |
+| GL-5 | `aria-label`: `PrivacySettingsTab` (8), `OrganizationsPage` (5), `OrganizationUsersPage` (4) | Mọi nút icon có nhãn | 31/08 | ☑ **Xong 03/09** — nhãn tĩnh/động đã bổ sung |
+| GL-6 | Unit test `utils/github-api.ts` | ≥ 8 test | 31/08 | ☑ **Xong 03/09** — 11/11 test pass |
+| GL-7 | Kiểm thử checklist mục 3.1, 3.2, 3.7 (Xác thực, RBAC, GitHub) | Tick hết checklist | 31/08 | ☑ **Xong 03/09** — toàn bộ ba mục đã có bằng chứng |
 
 ---
 
@@ -203,7 +204,7 @@ Mã công việc: `CK` Chí Khang · `QB` Quốc Bảo · `VM` Viết Minh · `G
 | G-2 | Console trình duyệt phải sạch | Gia Long tổng hợp | 31/08 | ☑ **Xong 29/08** — đã mở rộng `browser-console.spec.ts` từ 5 lên **12 route**, chạy 3/3 pass |
 | G-3 | Rà responsive 1440 / 768 / 390px | Mỗi người khu vực mình | 31/08 | ☑ **Xong 29/08** — đã dựng `tests/e2e/responsive-audit.spec.ts` tự động hoá, 4/4 pass, không có tràn ngang |
 | G-4 | Cập nhật `QA_LOG.md` cho commit bàn giao | Gia Long | 01/09 | ☑ **Xong 29/08** — đã ghi baseline; cần cập nhật lại ở commit bàn giao cuối |
-| G-5 | Tick checklist mục 3 tài liệu 17; mục nào ⚠/✗ phải ghi lý do | Cả 4 | 01/09 sáng | ◐ **42/59 mục đã tick** bằng bằng chứng test tự động; 16 mục cần người thao tác tay vẫn để trống |
+| G-5 | Tick checklist mục 3 tài liệu 17; mục nào ⚠/✗ phải ghi lý do | Cả 4 | 01/09 sáng | ◐ **50/61 mục đã tick** bằng bằng chứng; còn 10 mục ☐ ngoài phạm vi Gia Long |
 | G-6 | Báo lỗi trang Dự án / Chi tiết dự án cho **Duy Hoàng** | Cả 4 | Liên tục | ☑ **Xong 29/08** — [`docs/19_Bao_loi_Trang_Du_an_gui_Duy_Hoang.md`](./19_Bao_loi_Trang_Du_an_gui_Duy_Hoang.md) |
 
 ### Đã bổ sung vào bộ kiểm thử khi làm việc chung
@@ -274,7 +275,7 @@ Phải đạt **trong cùng một lần chạy** trên nhánh bàn giao:
 | Rủi ro | Mức | Phương án |
 | --- | --- | --- |
 | Chỉ còn ~3 ngày, khối lượng dark theme lớn (~130 chỗ hardcode) | **Cao** | Ưu tiên theo lưu lượng dùng: Nhóm → Nhiệm vụ → Chat AI → còn lại. Trang ít dùng có thể chấp nhận nợ, ghi rõ trong QA_LOG |
-| E2E song song còn flaky | Trung bình | Đã có phương án dự phòng: hạ `E2E_WORKERS=2` trong CI (GL-2) |
+| E2E song song ở 4 worker dễ nhiễu | Thấp | ☑ Đã khóa `E2E_WORKERS=2` trong CI; lượt nghiệm thu đạt 76/76 pass (GL-2) |
 | Phụ thuộc Duy Hoàng cho lỗi trang Dự án | Trung bình | Báo lỗi sớm ngay 29/08, không đợi tới ngày cuối |
 | Sửa CSS gây hồi quy chỗ khác | Trung bình | Bắt buộc kiểm thử chéo (G-1) trước khi đóng băng |
 | Provider AI thật cần API key + ngân sách | Trung bình | Luồng live chỉ demo khi có key; còn lại dùng fixture. Ghi rõ giới hạn khi bàn giao |
@@ -306,13 +307,13 @@ Cập nhật cuối mỗi ngày. Trạng thái: ☐ chưa làm · ◐ đang làm
 | VM-4 | Viết Minh | aria-label Teams/Chat | 31/08 | | | ☐ | |
 | VM-5 | Viết Minh | Unit test meeting-recovery | 31/08 | | | ☐ | |
 | VM-6 | Viết Minh | Checklist 3.6 + realtime | 31/08 | | | ☐ | |
-| GL-1 | Gia Long | Integration + web feature | **29/08** | ☐ | | | |
-| GL-2 | Gia Long | Ổn định E2E song song | 31/08 | | ☐ | ☐ | |
-| GL-3 | Gia Long | gitignore playwright-report | 29/08 | ☐ | | | |
-| GL-4 | Gia Long | Emoji Settings + theme GitHub | 30/08 | ☐ | ☐ | | |
-| GL-5 | Gia Long | aria-label Privacy/Org | 31/08 | | | ☐ | |
-| GL-6 | Gia Long | Unit test github-api | 31/08 | | | ☐ | |
-| GL-7 | Gia Long | Checklist 3.1/3.2/3.7 | 31/08 | | | ☐ | |
+| GL-1 | Gia Long | Integration + web feature | **29/08** | ☑ **Xong 03/09** | | | |
+| GL-2 | Gia Long | Ổn định E2E song song | 31/08 | | | ☑ **Xong 03/09** | |
+| GL-3 | Gia Long | gitignore playwright-report | 29/08 | ☑ **Xong 03/09** | | | |
+| GL-4 | Gia Long | Emoji Settings + theme GitHub | 30/08 | | ☑ **Xong 03/09** | | |
+| GL-5 | Gia Long | aria-label Privacy/Org | 31/08 | | | ☑ **Xong 03/09** | |
+| GL-6 | Gia Long | Unit test github-api | 31/08 | | | ☑ **Xong 03/09** | |
+| GL-7 | Gia Long | Checklist 3.1/3.2/3.7 | 31/08 | | | ☑ **Xong 03/09** | |
 | G-1 | Cả nhóm | Kiểm thử chéo | 01/09 | | | | ☐ |
 | G-2 | Gia Long | Console sạch | 31/08 | | | ☐ | |
 | G-3 | Cả nhóm | Responsive 3 kích thước | 31/08 | | | ☐ | |

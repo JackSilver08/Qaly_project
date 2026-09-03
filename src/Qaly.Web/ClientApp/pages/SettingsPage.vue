@@ -3,7 +3,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   User, Settings, Bell, Palette, Key, Database, Shield, Lock, Check,
   Activity, Cloud, Save, RefreshCw, Terminal, Globe, UserCheck, ShieldAlert,
-  Sliders, Plus, CheckSquare, Image, Laugh
+  Sliders, Plus, CheckSquare, Image, Laugh, Sun, Moon, Rocket, Lightbulb,
+  Paintbrush, ShieldCheck, Laptop, TrendingUp
 } from 'lucide-vue-next'
 import { useDashboardContext } from '../composables/dashboard-context'
 import ApiKeysTab from '../components/ApiKeysTab.vue'
@@ -52,7 +53,26 @@ const selectedProjectId = ref<string | null>(null)
 
 // Notion-style Workspace Customization
 const allowedDomains = ref('qaly.dev, company.com')
-const workspaceIcon = ref('🚀')
+const workspaceIconOptions = [
+  { value: 'rocket', label: 'Tên lửa', component: Rocket },
+  { value: 'idea', label: 'Ý tưởng', component: Lightbulb },
+  { value: 'creative', label: 'Sáng tạo', component: Paintbrush },
+  { value: 'security', label: 'Bảo mật', component: ShieldCheck },
+  { value: 'technology', label: 'Công nghệ', component: Laptop },
+  { value: 'growth', label: 'Tăng trưởng', component: TrendingUp },
+] as const
+const legacyWorkspaceIcons: Record<string, string> = {
+  ['\u{1F680}']: 'rocket',
+  ['\u{1F4A1}']: 'idea',
+  ['\u{1F3A8}']: 'creative',
+  ['\u{1F6E1}\u{FE0F}']: 'security',
+  ['\u{1F4BB}']: 'technology',
+  ['\u{1F4C8}']: 'growth',
+}
+const workspaceIcon = ref('rocket')
+const selectedWorkspaceIconComponent = computed(() =>
+  workspaceIconOptions.find(option => option.value === workspaceIcon.value)?.component ?? Rocket,
+)
 const workspaceCover = ref('deep-ocean')
 
 // Jira-style Kanban Workflow settings
@@ -111,7 +131,7 @@ function loadOrgSettings() {
   const org = organizations.value.find((o: any) => o.id === selectedOrgId.value)
   if (org) {
     allowedDomains.value = org.allowedEmailDomains || ''
-    workspaceIcon.value = org.workspaceIcon || '🚀'
+    workspaceIcon.value = legacyWorkspaceIcons[org.workspaceIcon] || org.workspaceIcon || 'rocket'
     workspaceCover.value = org.workspaceCover || 'deep-ocean'
   }
 }
@@ -560,16 +580,15 @@ const userInitials = computed(() => {
                     <span class="help-text">Tách biệt bằng dấu phẩy. Chỉ cho phép các email đuôi này tự đăng ký thành viên.</span>
                   </div>
                   <div class="form-group">
-                    <label for="ws-icon">Biểu tượng không gian (Emoji)</label>
+                    <label for="ws-icon">Biểu tượng không gian</label>
                     <div style="display: flex; gap: 8px; align-items: center;">
-                      <span class="emoji-preview-box">{{ workspaceIcon }}</span>
+                      <span class="icon-preview-box" aria-hidden="true">
+                        <component :is="selectedWorkspaceIconComponent" :size="22" />
+                      </span>
                       <select id="ws-icon" v-model="workspaceIcon" style="flex: 1;">
-                        <option value="🚀">🚀 Tên lửa</option>
-                        <option value="💡">💡 Ý tưởng</option>
-                        <option value="🎨">🎨 Sáng tạo</option>
-                        <option value="🛡️">🛡️ Bảo mật</option>
-                        <option value="💻">💻 Công nghệ</option>
-                        <option value="📈">📈 Tăng trưởng</option>
+                        <option v-for="option in workspaceIconOptions" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </option>
                       </select>
                     </div>
                   </div>
@@ -1119,12 +1138,15 @@ const userInitials = computed(() => {
   margin-top: -2px;
 }
 
-.emoji-preview-box {
-  font-size: 24px;
+.icon-preview-box {
+  min-width: 48px;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
   background: var(--panel-soft);
   border: 1px solid var(--line);
   border-radius: var(--qaly-radius-lg);
-  padding: 6px 12px;
+  color: var(--primary);
 }
 
 .cover-selector-grid {

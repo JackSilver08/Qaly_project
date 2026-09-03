@@ -206,7 +206,7 @@ onMounted(load)
           Tạo tổ chức, chỉ định chủ sở hữu và quản lý vòng đời của từng không gian làm việc.
         </p>
       </div>
-      <button class="primary" :disabled="isInitialLoad || !owners.length" @click="openCreate">
+      <button class="primary" aria-label="Tạo tổ chức" :disabled="isInitialLoad || !owners.length" @click="openCreate">
         <Plus :size="18" /> Tạo tổ chức
       </button>
     </header>
@@ -245,7 +245,7 @@ onMounted(load)
           <option value="inactive">Đã vô hiệu hóa</option>
           <option value="all">Mọi trạng thái</option>
         </select>
-        <button class="icon-button" :title="isRefreshing ? 'Đang tải lại' : 'Tải lại'" @click="load({ refreshing: true })">
+        <button class="icon-button" :title="isRefreshing ? 'Đang tải lại' : 'Tải lại'" :aria-label="isRefreshing ? 'Đang tải lại danh sách tổ chức' : 'Tải lại danh sách tổ chức'" @click="load({ refreshing: true })">
           <RefreshCw :size="18" :class="{ 'is-spinning': isRefreshing }" />
         </button>
       </section>
@@ -264,7 +264,7 @@ onMounted(load)
           <Building2 :size="22" />
         </template>
         <template #actions>
-          <button v-if="owners.length" class="primary" type="button" @click="openCreate">
+          <button v-if="owners.length" class="primary" type="button" aria-label="Tạo tổ chức" @click="openCreate">
             <Plus :size="18" /> Tạo tổ chức
           </button>
         </template>
@@ -306,18 +306,20 @@ onMounted(load)
                 <button
                   class="action-button"
                   title="Quản lý thành viên"
+                  :aria-label="`Quản lý thành viên ${item.name}`"
                   :disabled="!item.isActive"
                   @click="openMembers(item)"
                 >
                   <Users :size="17" />
                 </button>
-                <button class="action-button" title="Chỉnh sửa" @click="openEdit(item)">
+                <button class="action-button" title="Chỉnh sửa" :aria-label="`Chỉnh sửa ${item.name}`" @click="openEdit(item)">
                   <Pencil :size="17" />
                 </button>
                 <button
                   v-if="item.isActive"
                   class="action-button danger"
                   title="Vô hiệu hóa"
+                  :aria-label="`Vô hiệu hóa ${item.name}`"
                   @click="deactivate(item)"
                 >
                   <XCircle :size="17" />

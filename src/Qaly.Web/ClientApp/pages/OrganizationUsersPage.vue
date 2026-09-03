@@ -253,6 +253,7 @@ onMounted(async () => {
       <button
         v-if="canManage && hasCapability('organization.users.invite')"
         class="primary"
+        aria-label="Thêm thành viên tổ chức"
         :disabled="isInitialLoad || !selectedId"
         @click="inviteOpen = true"
       >
@@ -303,7 +304,7 @@ onMounted(async () => {
           <Search :size="18" />
           <input v-model="search" placeholder="Tìm theo tên hoặc email" />
         </label>
-        <button class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" @click="loadMembers">
+        <button class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải lại danh sách thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
           <RefreshCw :size="18" :class="{ 'is-spinning': isLoadingMembers }" />
         </button>
       </section>
@@ -344,6 +345,7 @@ onMounted(async () => {
             v-if="canManage && hasCapability('organization.users.invite')"
             class="primary"
             type="button"
+            aria-label="Thêm thành viên tổ chức"
             @click="inviteOpen = true"
           >
             <MailPlus :size="18" /> Thêm thành viên
@@ -393,6 +395,7 @@ onMounted(async () => {
                 <button
                   class="evidence"
                   type="button"
+                  title="Xem bằng chứng kỹ năng"
                   :aria-label="`Xem bằng chứng kỹ năng ${member.fullName}`"
                   @click="evidenceMember = member"
                 >
@@ -402,6 +405,7 @@ onMounted(async () => {
                   v-if="canManage && member.role !== 'Owner' && hasCapability('organization.users.remove')"
                   class="remove"
                   :disabled="saving === member.userId"
+                  title="Gỡ thành viên"
                   :aria-label="`Gỡ ${member.fullName}`"
                   @click="removeMember(member)"
                 >

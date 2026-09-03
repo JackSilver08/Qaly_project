@@ -11,7 +11,9 @@ using Qaly.Application.DTOs.Ai;
 using Qaly.Application.DTOs.Groups;
 using Qaly.Application.DTOs.Project;
 using Qaly.Application.DTOs.Task;
+using Qaly.Application.DTOs.User;
 using Qaly.Application.DTOs.Wiki;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Enums;
 using Qaly.Infrastructure.Data;
@@ -71,6 +73,46 @@ public sealed class WebFeatureSmokeTests : IDisposable
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Test]
+    public async Task Login_page_rejects_an_inactive_account_without_creating_a_session()
+    {
+        var email = $"inactive-{Guid.NewGuid():N}@qaly.test";
+        const string password = "Password@123";
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var auth = scope.ServiceProvider.GetRequiredService<IAuthService>();
+            var registration = await auth.RegisterAsync(new RegisterDto(
+                "Inactive Feature User",
+                email,
+                password,
+                password));
+            registration.IsSuccess.Should().BeTrue(registration.Error);
+
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var user = await db.Users.SingleAsync(item => item.Id == registration.Data!.Id);
+            user.IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["Email"] = email,
+            ["Password"] = password
+        });
+        var response = await _client.PostAsync("/Account/Login", form);
+        var html = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var setCookies = response.Headers.TryGetValues("Set-Cookie", out var values)
+            ? values.ToArray()
+            : Array.Empty<string>();
+        setCookies.Should().NotContain(cookie =>
+            cookie.StartsWith("Qaly.Auth=", StringComparison.OrdinalIgnoreCase));
+        WebUtility.HtmlDecode(html).Should().Contain("Email hoặc mật khẩu không đúng.");
+        html.Should().Contain("id=\"loginForm\"");
     }
 
     [Test]

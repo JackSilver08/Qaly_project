@@ -225,10 +225,11 @@ function openExternal(url: string) {
 .management {
   margin: 2px 28px 24px;
   overflow: hidden;
-  background: #f8fbff;
-  border: 1px solid #d7e2ef;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 17px;
-  box-shadow: 0 7px 20px rgba(35, 57, 84, .045);
+  box-shadow: var(--shadow-soft);
 }
 
 .management__header {
@@ -237,12 +238,12 @@ function openExternal(url: string) {
   display: flex;
   justify-content: space-between;
   gap: 18px;
-  background: linear-gradient(120deg, #fffdf8, #f3f7ff);
-  border-bottom: 1px solid #dbe4f0;
+  background: linear-gradient(120deg, var(--panel), var(--panel-soft));
+  border-bottom: 1px solid var(--line);
 }
 
 .management__header span {
-  color: #1358c8;
+  color: var(--primary);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .13em;
@@ -251,13 +252,13 @@ function openExternal(url: string) {
 
 .management__header h3 {
   margin: 3px 0 4px;
-  color: #14213a;
+  color: var(--text-strong);
   font-size: 21px;
   letter-spacing: -.025em;
 }
 
 .management__header p {
-  color: #64748b;
+  color: var(--muted);
   line-height: 1.45;
   margin: 0;
 }
@@ -268,19 +269,19 @@ function openExternal(url: string) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: linear-gradient(135deg, #1762d5, #0d4cad);
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
   border: 0;
   border-radius: 11px;
-  color: #fff;
+  color: var(--text-on-accent);
   font-weight: 700;
-  box-shadow: 0 8px 18px rgba(19, 88, 200, .2);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 20%, transparent);
   cursor: pointer;
   transition: transform .25s ease, box-shadow .25s ease, opacity .25s ease;
 }
 
 .management__header button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(19, 88, 200, .28);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 .management__header button:disabled {
@@ -302,30 +303,30 @@ function openExternal(url: string) {
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 8px;
-  background: #fff;
-  border: 1px solid #dce5ef;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 13px;
-  box-shadow: 0 4px 12px rgba(33, 55, 83, .035);
+  box-shadow: var(--shadow-soft);
 }
 
 .metrics svg {
-  color: #1358c8;
+  color: var(--primary);
 }
 
 .metrics span {
-  color: #64748b;
+  color: var(--muted);
   font-size: 12px;
 }
 
 .metrics strong {
-  color: #14213a;
+  color: var(--text-strong);
   font-size: 24px;
   letter-spacing: -.04em;
 }
 
 .metrics .alert svg,
 .metrics .alert strong {
-  color: #d92d20;
+  color: var(--danger);
 }
 
 .toolbar {
@@ -340,42 +341,42 @@ function openExternal(url: string) {
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: #edf2f8;
+  background: var(--panel-soft);
   border-radius: 11px;
 }
 
 .toolbar button {
   border: 0;
   background: transparent;
-  color: #64748b;
+  color: var(--muted);
   padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
 }
 
 .toolbar button.active {
-  background: #fff;
-  color: #0b3f98;
-  box-shadow: 0 3px 10px rgba(31, 54, 83, .1);
+  background: var(--panel);
+  color: var(--primary-strong);
+  box-shadow: var(--shadow-soft);
 }
 
 .toolbar button b {
   margin-left: 3px;
-  color: #1358c8;
+  color: var(--primary);
 }
 
 .toolbar select {
   min-height: 40px;
   padding: 8px 34px 8px 11px;
-  background: #fff;
-  border: 1px solid #ccd9e8;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 10px;
   color: inherit;
 }
 
 .toolbar select:focus {
-  border-color: #6f9ddd;
-  box-shadow: 0 0 0 3px rgba(19, 88, 200, .1);
+  border-color: var(--primary);
+  box-shadow: var(--qaly-focus-ring);
   outline: none;
 }
 
@@ -392,8 +393,8 @@ function openExternal(url: string) {
   grid-template-columns: auto 1fr auto auto;
   gap: 11px;
   align-items: center;
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 14px;
   cursor: pointer;
   transition: background-color .22s ease, padding-left .22s ease, box-shadow .22s ease;
@@ -401,8 +402,8 @@ function openExternal(url: string) {
 
 .item-card:hover {
   padding-left: 22px;
-  background: #f4f8ff;
-  box-shadow: 0 8px 20px rgba(19, 88, 200, .08);
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-card);
 }
 
 .item-card i {
@@ -411,24 +412,24 @@ function openExternal(url: string) {
   display: grid;
   place-items: center;
   border-radius: 10px;
-  background: #eaf2ff;
-  color: #1358c8;
+  background: var(--primary-soft);
+  color: var(--primary);
   font-style: normal;
 }
 
 .item-card i.success {
-  color: #12b76a;
-  background: rgba(18, 183, 106, .1);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
 }
 
 .item-card i.pending {
-  color: #175cd3;
-  background: #eff8ff;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .item-card i.danger {
-  color: #d92d20;
-  background: #fef3f2;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .item-body {
@@ -439,12 +440,12 @@ function openExternal(url: string) {
 }
 
 .item-body strong {
-  color: #17243a;
+  color: var(--text-strong);
   font-size: 13px;
 }
 
 .item-body small {
-  color: #697990;
+  color: var(--muted);
   line-height: 1.45;
 }
 
@@ -460,24 +461,24 @@ function openExternal(url: string) {
   gap: 4px;
   min-height: 26px;
   padding: 4px 9px;
-  border: 1px solid #cfe0ff;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line));
   border-radius: 999px;
-  background: #eff6ff;
-  color: #1358c8;
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .task-tag:hover {
-  background: #e0edff;
+  background: color-mix(in srgb, var(--primary) 20%, var(--panel));
 }
 
 .task-tag--muted {
   cursor: default;
-  color: #71839a;
-  border-color: #e1e7ef;
-  background: #f8fafc;
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--panel-soft);
 }
 
 .item-card em {
@@ -488,36 +489,36 @@ function openExternal(url: string) {
   font-style: normal;
   padding: 5px 8px;
   border-radius: 999px;
-  background: #f2f4f7;
-  color: #667085;
+  background: var(--panel-soft);
+  color: var(--muted);
   white-space: nowrap;
 }
 
 .item-card .approved,
 .item-card .success {
-  background: #ecfdf3;
-  color: #067647;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
 }
 
 .item-card .danger {
-  background: #fef3f2;
-  color: #b42318;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .item-card .pending {
-  background: #fffaeb;
-  color: #b54708;
+  background: var(--warning-soft);
+  color: var(--warning-dark);
 }
 
 .external-icon {
-  color: #96a4b8;
+  color: var(--text-muted);
 }
 
 .items p,
 .state {
   padding: 28px;
   text-align: center;
-  color: #64748b;
+  color: var(--muted);
 }
 
 .state {
@@ -530,7 +531,7 @@ function openExternal(url: string) {
 .state.empty {
   flex-direction: column;
   min-height: 160px;
-  background: linear-gradient(180deg, #fffdf8, #f8fbff);
+  background: linear-gradient(180deg, var(--panel), var(--panel-soft));
 }
 
 .state.empty p {
@@ -539,7 +540,7 @@ function openExternal(url: string) {
 }
 
 .state.error {
-  color: #b42318;
+  color: var(--danger);
 }
 
 .state.error button,
@@ -554,10 +555,10 @@ function openExternal(url: string) {
 footer {
   padding: 12px 18px;
   text-align: right;
-  color: #76869a;
+  color: var(--muted);
   font-size: 11px;
-  border-top: 1px solid #dbe4f0;
-  background: #fff;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .spin {

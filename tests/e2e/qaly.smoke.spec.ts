@@ -285,6 +285,21 @@ test("should login successfully", async ({ page }) => {
         timeout: 20_000,
     });
     await expect(page.locator("#loginForm")).toBeVisible();
+
+    await page.goBack();
+    await expect(page.locator("#loginForm")).toBeVisible();
+    await expect(page).toHaveURL(/\/Account\/Login/i);
+});
+
+test("should reject an incorrect password with a safe Vietnamese error", async ({ page }) => {
+    await page.goto("/Account/Login", { waitUntil: "domcontentloaded" });
+    await page.locator('input[name="Email"]').fill(adminEmail);
+    await page.locator('input[name="Password"]').fill("definitely-not-the-password");
+    await page.getByRole("button", { name: /Đăng nhập|Login/i }).click();
+
+    await expect(page.locator(".auth-error")).toHaveText("Email hoặc mật khẩu không đúng.");
+    await expect(page.locator("#loginForm")).toBeVisible();
+    await expect(page).toHaveURL(/\/Account\/Login/i);
 });
 
 test("should show an honest empty state when dashboard data fails", async ({ page }) => {
@@ -477,8 +492,8 @@ test("should open analytics page", async ({ page }) => {
 
     await page.locator('a[href="/analytics"]').click();
     await expect(page).toHaveURL(/\/analytics$/);
-    await expect(page.getByRole("heading", { name: /Bạn muốn Qaly giúp gì/i })).toBeVisible();
-    await expect(page.getByRole("textbox", { name: /Nhập yêu cầu cho Trợ lý AI/i })).toBeVisible();
+    await expect(page.locator(".analytics-chat-portal")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: /Nhập yêu cầu (tiếp theo )?cho Trợ lý AI/i })).toBeVisible();
 });
 
 test("should render meeting page in two authenticated contexts", async ({

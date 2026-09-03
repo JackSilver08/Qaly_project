@@ -3,7 +3,7 @@
 > Tài liệu công việc kiểm thử cuối kỳ. Dùng để chạy lại toàn bộ các lớp kiểm thử, đối chiếu
 > checklist theo module, và theo dõi các lỗi giao diện/chức năng đã phát hiện.
 >
-> Cập nhật lần cuối: 2026-08-29 · Nhánh: `main`
+> Cập nhật lần cuối: 2026-09-03 · Nhánh: `main`
 
 ---
 
@@ -39,6 +39,8 @@ tức là chậm và khó khoanh vùng. Lớp `tests/client/` lấp đúng kho�
 | `tests/client/use-permissions.spec.ts` | Simulation Mode, header giả lập, `canAccessModule`, AI tier |
 | `tests/client/use-confirm-dialog.spec.ts` | Hộp thoại confirm/prompt, dialog chồng nhau, reset trạng thái |
 | `tests/client/components.spec.ts` | `PageStatePanel`, `TaskItem`, `ToastContainer` (render + a11y + sự kiện) |
+| `tests/client/github-api.spec.ts` | 11 nhánh API GitHub: trạng thái, installation, repository, kết nối/ngắt, development, management và sync |
+| `tests/client/project-members.spec.ts` | RBAC trên UI thành viên: người chỉ đọc không thấy control sửa; Owner không có control đổi vai trò/gỡ |
 
 ---
 
@@ -46,11 +48,11 @@ tức là chậm và khó khoanh vùng. Lớp `tests/client/` lấp đúng kho�
 
 | Bộ test | Kết quả | Ghi chú |
 | --- | --- | --- |
-| Backend unit | **595 / 595 pass** | 590 sẵn có + 5 test mới cho routing provider AI |
-| Frontend unit | **155 / 155 pass** | 8 file spec mới |
-| Integration | **166 / 166 pass** | Chạy lại 29/08. Ngưỡng coverage CI: line ≥ 16% |
-| Web feature | **38 / 38 pass** | Chạy lại 29/08 |
-| E2E | **61 pass / 6 fail** (4 worker)<br>7/7 spec mục tiêu pass khi `--workers=1` | 25 spec, chromium. Xem mục 4.3 & 4.4 |
+| Backend unit | **596 / 596 pass** | Có hồi quy tài khoản bị vô hiệu hóa; chạy lại 03/09 |
+| Frontend unit | **168 / 168 pass** | 10 file spec; gồm 11 test `github-api` và 2 test RBAC thành viên |
+| Integration | **166 / 166 pass** | 0 fail; line coverage **49,79%** (22.327 / 44.840), vượt ngưỡng 16% |
+| Web feature | **39 / 39 pass** | Có kiểm thử trang đăng nhập chặn tài khoản bị vô hiệu hóa |
+| E2E | **76 / 76 pass** (`E2E_WORKERS=2`) | 26 spec, Chromium, 0 fail / 0 skip; cấu hình này đã khóa trong CI |
 | Typecheck | ✅ Pass | `npm run typecheck` |
 | Build FE | ✅ Pass | `npm run build` — nhớ commit `src/Qaly.Web/wwwroot/dist` |
 | Console trình duyệt | **3 / 3 pass** | `browser-console.spec.ts`, đã mở rộng từ 5 lên **12 route** |
@@ -66,7 +68,7 @@ Ngưỡng coverage CI đang áp: unit ≥ **43%** line, integration ≥ **16%** 
 
 Ký hiệu: ☐ chưa kiểm · ☑ đã kiểm & đạt · ⚠ đạt nhưng có ghi chú · ✗ lỗi
 
-**Trạng thái ngày 29/08 — 42 ☑ đạt · 1 ⚠ · 16 ☐ (tổng 59):** các mục ☑ đã được **kiểm chứng bằng
+**Trạng thái ngày 03/09 — 50 ☑ đạt · 1 ⚠ · 10 ☐ (tổng 61):** các mục ☑ đã được **kiểm chứng bằng
 test tự động** — cột "Bằng chứng" ghi rõ file test nào chứng minh. Các mục ☐ cần **người thao tác
 tay**, chưa ai làm.
 
@@ -75,13 +77,13 @@ tay**, chưa ai làm.
 | | Hạng mục | Bằng chứng |
 | --- | --- | --- |
 | ☑ | Đăng nhập đúng mật khẩu vào được hệ thống | `qaly.smoke.spec.ts` — *should login successfully* |
-| ☐ | Đăng nhập **sai** mật khẩu báo lỗi tiếng Việt | Cần kiểm tay |
+| ☑ | Đăng nhập **sai** mật khẩu báo lỗi tiếng Việt | `qaly.smoke.spec.ts` — *should reject an incorrect password with the safe Vietnamese error* |
 | ☑ | Tài khoản bị vô hiệu hoá bị chặn (mức API) | `RcSafetyRegressionTests` (integration) |
-| ☐ | Tài khoản bị vô hiệu hoá bị chặn (mức UI) | Cần kiểm tay |
+| ☑ | Tài khoản bị vô hiệu hoá bị chặn (mức UI) | `WebFeatureSmokeTests.Login_page_rejects_an_inactive_account_without_creating_a_session` · `AuthServiceTests.LoginRejectsInactiveAccountWithTheSameSafeMessage` |
 | ☑ | API trả 401 → chuyển `/Account/Login?returnUrl=...` giữ đúng trang đang xem | `tests/client/api-client.spec.ts` |
 | ☑ | CSRF: mọi POST/PUT/DELETE đều kèm `X-CSRF-TOKEN`, không ghi đè token do caller truyền | `tests/client/api-client.spec.ts` |
 | ☑ | Trang đăng nhập/đăng ký không có lỗi console | `browser-console.spec.ts` |
-| ☐ | Đăng xuất xoá sạch phiên, back-button không vào lại trang nội bộ | Cần kiểm tay |
+| ☑ | Đăng xuất xoá sạch phiên, back-button không vào lại trang nội bộ | `qaly.smoke.spec.ts` — đăng xuất, quay lại bằng browser history vẫn ở `/Account/Login` |
 
 ### 3.2 Phân quyền (RBAC) & Tenant isolation
 
@@ -93,8 +95,8 @@ tay**, chưa ai làm.
 | ☑ | Không rò rỉ dữ liệu chéo tenant | `DashboardTenantIsolationIntegrationTests` |
 | ☑ | Moderator hết hạn / bị thu hồi mất quyền ngay | `OrganizationUsersAuthorizationTests` (integration) |
 | ☑ | Simulation Mode gửi đúng `X-Simulate-User-Id`, thoát sạch trạng thái | `tests/client/use-permissions.spec.ts` |
-| ☐ | Đổi vai trò thành viên trên UI (chỉ Manager/Owner/ScrumMaster làm được) | Cần kiểm tay |
-| ☐ | Owner không bị gỡ khỏi dự án trên UI | Cần kiểm tay |
+| ☑ | Đổi vai trò thành viên trên UI (chỉ Manager/Owner/ScrumMaster làm được) | `tests/client/project-roles.spec.ts` · `tests/client/project-members.spec.ts` |
+| ☑ | Owner không bị gỡ khỏi dự án trên UI | `tests/client/project-members.spec.ts` — Owner không render role selector và nút gỡ |
 
 ### 3.3 Dự án & Nhiệm vụ
 
@@ -152,7 +154,7 @@ tay**, chưa ai làm.
 | ☑ | Kết nối/ngắt repository | `GitHubRepositoryConnectionServiceTests` |
 | ☑ | Commit, PR, workflow run liên kết đúng task | `GitHubProjectManagementServiceTests` |
 | ☑ | Webhook nhận và xử lý sự kiện; secret không bị lộ | `GitHubWebhookIntegrationTests` · `WebhookEndpointPolicyTests` · `qaly.smoke.spec.ts` |
-| ☐ | Kiểm thử tay với GitHub App thật | Cần cấu hình App |
+| ☑ | Kiểm thử tay với GitHub App thật | 03/09: xác thực đọc `GET /app` bằng App ID/private key cấu hình cục bộ; API trả đúng App ID và slug `qaly-connect-tuant` (không ghi log secret) |
 
 ### 3.8 Giao diện & Trải nghiệm
 
@@ -166,8 +168,10 @@ tay**, chưa ai làm.
 | ☑ | Trạng thái rỗng/đang tải/lỗi có thông điệp tiếng Việt rõ ràng | `tests/client/components.spec.ts` · `qaly.smoke.spec.ts` — *honest empty state* |
 | ☑ | **Console trình duyệt sạch trên 12 route chính** | `browser-console.spec.ts` — 3/3 pass |
 | ⚠ | Bàn phím: phần tử bấm được phải tab tới và kích hoạt được | `TaskItem` đã đạt (`components.spec.ts`). **Còn ~22 chỗ khác chưa rà** — QB-5 |
-| ☐ | Nút icon có `aria-label` / `title` — ~46 nút trong 7 file | CK-3, VM-4, GL-5 |
-| ☐ | Bỏ emoji khỏi nút và nhãn — ~44 chỗ | CK-2, VM-3, GL-4 |
+| ☑ | Nút icon có nhãn truy cập trong phạm vi GL | `PrivacySettingsTab.vue`, `OrganizationsPage.vue`, `OrganizationUsersPage.vue` — thêm `aria-label`/`title`, gồm cả nhãn động theo đối tượng |
+| ☐ | Nút icon có `aria-label` / `title` ở các file còn lại | CK-3, VM-4 |
+| ☑ | Bỏ 8 emoji Cài đặt và 10 màu GitHub hardcode trong phạm vi GL | `SettingsPage.vue` dùng Lucide icon và ánh xạ tương thích dữ liệu emoji cũ; `GitHubProjectManagement.vue` dùng token theme |
+| ☐ | Bỏ emoji khỏi nút và nhãn ở các file còn lại | CK-2, VM-3 |
 
 ## 4. Kết quả E2E & lỗi đã xử lý
 
@@ -211,8 +215,9 @@ Test chặn hồi quy tương ứng:
 | --- | --- | --- |
 | 7 spec mục tiêu, `--workers=1` | 7 fail | **7 pass** |
 | Toàn bộ suite, 4 worker (mặc định) | 55 pass / 11 fail / 5 không chạy | **61 pass / 6 fail / 4 không chạy** |
+| Toàn bộ suite, `E2E_WORKERS=2` (cấu hình CI) | 72 pass / 2 fail / 2 không chạy (2 assert UI lỗi thời) | **76 pass / 0 fail / 0 không chạy** |
 
-### 4.4 Bất ổn khi chạy song song (chưa đóng hoàn toàn)
+### 4.4 Bất ổn khi chạy song song (đã đóng cho CI)
 
 Suite chạy 4 worker trên **một** dev server dùng chung. Khi máy bận, panel Trợ lý AI vẫn đang
 re-render/auto-scroll nên Playwright báo `element is not stable` hoặc
@@ -230,8 +235,9 @@ re-render/auto-scroll nên Playwright báo `element is not stable` hoặc
 `ai-native-bounded-loop-progressive-launch`, `ai-project-launch-orchestration`, `ai-research-plan`
 và `qaly.smoke` (chat realtime giữa 2 context) — các spec không bị sửa gì trong đợt này.
 
-Khuyến nghị vận hành: khi cần kết quả tin cậy để nghiệm thu, chạy `--workers=1`, hoặc đặt
-`E2E_WORKERS=2`. CI đã bật `retries: 1`.
+Đã chốt `E2E_WORKERS=2` trong `.github/workflows/ci.yml`: suite dùng chung một ứng dụng và database,
+nên 2 worker vẫn giữ được song song nhưng tránh tranh chấp tài nguyên đã quan sát ở 4 worker. Lượt
+nghiệm thu cuối đạt **76/76 pass, 0 fail, 0 skip** trong 4 phút. CI vẫn giữ `retries: 1`.
 
 ---
 
@@ -239,11 +245,11 @@ Khuyến nghị vận hành: khi cần kết quả tin cậy để nghiệm thu,
 
 | Rủi ro | Mức | Ghi chú |
 | --- | --- | --- |
-| E2E phụ thuộc dữ liệu seed dùng chung, chạy song song dễ nhiễu | Cao | Đã giảm bằng `seeded-project.ts`; các spec tạo dự án mới nên dọn dẹp sau khi chạy |
+| E2E phụ thuộc dữ liệu seed dùng chung, chạy song song dễ nhiễu | Trung bình | Đã giảm bằng `seeded-project.ts` và khóa CI ở `E2E_WORKERS=2`; các spec tạo dự án mới vẫn nên dọn dẹp sau khi chạy |
 | `canAccessModule` **fail-open** khi thiếu quyền trong danh sách | Trung bình | Client chỉ là lớp hiển thị, server vẫn chặn. Cần giữ nguyên nguyên tắc "server là biên enforcement" |
 | Chưa có unit test cho `use-task-actions`, `use-project-actions`, `use-meeting-recovery` | Trung bình | Các composable này gọi API và có nhánh lỗi; nên bổ sung tiếp |
 | Chưa có kiểm thử tải/hiệu năng | Trung bình | Chưa nằm trong phạm vi bàn giao hiện tại |
-| `playwright-report/` bị commit vào git | Thấp | `.gitignore` đã bỏ qua `test-results/`, `TestResults/` nhưng **chưa có** `playwright-report/`, nên mỗi lần chạy E2E lại tạo hàng chục file thay đổi trong `git status`. Đề xuất: thêm `playwright-report/` vào `.gitignore` rồi `git rm -r --cached playwright-report` (chưa thực hiện vì đụng vào git index) |
+| Báo cáo Playwright làm bẩn git | Đã đóng | Đã thêm `playwright-report/` vào `.gitignore` và bỏ `playwright-report`, `test-results` khỏi index; chạy E2E lại không phát sinh thay đổi artifact trong `git status` |
 | Provider AI thật (DeepSeek) cần API key hợp lệ | Cao | Test dùng fixture/mock; luồng live chỉ chạy được khi có key và ngân sách |
 
 ---
@@ -252,13 +258,13 @@ Khuyến nghị vận hành: khi cần kết quả tin cậy để nghiệm thu,
 
 Tất cả phải đạt trong **cùng một lần chạy** trên nhánh phát hành:
 
-1. ☐ `dotnet test Qaly_project.slnx -c Release` — 0 fail
-2. ☐ `npm run test:unit` — 0 fail
-3. ☐ `npm run typecheck` — 0 lỗi
-4. ☐ `npm run build` — thành công, và `git diff --exit-code -- src/Qaly.Web/wwwroot/dist` sạch
-5. ☐ `npm run test:e2e` — 0 fail
-6. ☐ Coverage unit ≥ 43% line, integration ≥ 16% line
-7. ☐ Console trình duyệt sạch trên các luồng chính
+1. ☑ `dotnet test Qaly_project.slnx -c Release --maxcpucount:1` — 801/801 pass, 0 fail
+2. ☑ `npm run test:unit` — 168/168 pass, 0 fail
+3. ☑ `npm run typecheck` — 0 lỗi
+4. ⚠ `npm run build` — thành công; `dist` đã được sinh lại và đang chờ commit cùng mã nguồn
+5. ☑ `npm run test:e2e` với `E2E_WORKERS=2` — 76/76 pass, 0 fail
+6. ⚠ Integration line **49,79%** ≥ 16%; unit coverage chưa đo lại trong lượt 03/09
+7. ☑ Console trình duyệt sạch trên các luồng chính (`browser-console.spec.ts` pass trong suite E2E)
 8. ☐ Checklist mục 3 được đánh dấu hết, mọi mục ⚠/✗ có ghi chú lý do
 9. ☐ `QA_LOG.md` được cập nhật cho commit phát hành
 

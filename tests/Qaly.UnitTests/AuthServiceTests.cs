@@ -48,6 +48,27 @@ public class AuthServiceTests
         login.StatusCode.Should().Be(401);
     }
 
+    [Fact]
+    public async Task LoginRejectsInactiveAccountWithTheSameSafeMessage()
+    {
+        var users = new InMemoryRepository<User>();
+        var service = CreateService(users);
+
+        var registration = await service.RegisterAsync(new RegisterDto(
+            "Inactive User",
+            "inactive@qaly.dev",
+            "Password@123",
+            "Password@123"));
+        var user = await users.GetByIdAsync(registration.Data!.Id);
+        user!.IsActive = false;
+
+        var login = await service.LoginAsync(new LoginDto("inactive@qaly.dev", "Password@123"));
+
+        login.IsSuccess.Should().BeFalse();
+        login.StatusCode.Should().Be(401);
+        login.Error.Should().Be("Email hoặc mật khẩu không đúng.");
+    }
+
     private static AuthService CreateService(IRepository<User> users)
     {
         var unitOfWork = new Mock<IUnitOfWork>();

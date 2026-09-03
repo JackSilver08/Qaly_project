@@ -67,6 +67,7 @@ dotnet-sdk-*.zip
 TestResults/
 .test-results/
 test-results/
+playwright-report/
 coverage/
 .backups/
 *.trx
