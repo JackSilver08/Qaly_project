@@ -142,10 +142,12 @@ async function startFreshAssistantConversation(page: Page, assistant: Locator) {
 }
 
 function waitForAssistantTurn(page: Page) {
+  // The turn request stays open until the model finishes, so this wait has to match the
+  // assistant budget rather than Playwright's 30s default for waitForResponse.
   return page.waitForResponse(response => {
     const url = new URL(response.url())
     return url.pathname === '/api/ai/assistant/turns' && response.request().method() === 'POST'
-  })
+  }, { timeout: 240_000 })
 }
 
 async function expectAssistantTurnPersisted(page: Page, response: APIResponse, prompt: string) {
