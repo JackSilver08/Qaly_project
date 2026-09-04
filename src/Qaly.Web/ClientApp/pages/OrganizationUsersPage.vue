@@ -37,6 +37,10 @@ interface OrganizationMember {
   email: string
   role: string
   joinedAt: string
+  projects: Array<{ projectId: string; projectName: string; projectCode: string; role: string }> | null
+  weeklyCapacityHours: number | null
+  capacityState: string | null
+  skills: string[] | null
 }
 
 const roles = ['OrganizationAdmin', 'PrivacyOperator', 'BillingAdmin', 'Member'] as const
@@ -68,7 +72,9 @@ const visibleMembers = computed(() => {
   return members.value.filter(
     (item) =>
       item.fullName.toLowerCase().includes(term) ||
-      item.email.toLowerCase().includes(term),
+      item.email.toLowerCase().includes(term) ||
+      (item.projects ?? []).some(project => `${project.projectName} ${project.projectCode} ${project.role}`.toLowerCase().includes(term)) ||
+      (item.skills ?? []).some(skill => skill.toLowerCase().includes(term)),
   )
 })
 
@@ -366,6 +372,8 @@ onMounted(async () => {
             <tr>
               <th scope="col">Thành viên</th>
               <th scope="col">Vai trò tổ chức</th>
+              <th scope="col">Project / role</th>
+              <th scope="col">Skill &amp; capacity</th>
               <th scope="col">Ngày tham gia</th>
               <th scope="col"><span class="sr-only">Thao tác</span></th>
             </tr>
@@ -397,6 +405,22 @@ onMounted(async () => {
                   </option>
                 </select>
                 <span v-else class="role">{{ roleLabel(member.role) }}</span>
+              </td>
+              <td class="project-memberships">
+                <RouterLink
+                  v-for="project in member.projects ?? []"
+                  :key="project.projectId"
+                  :to="{ name: 'project-detail', params: { projectId: project.projectId } }"
+                >
+                  {{ project.projectName }} ({{ project.projectCode }}) · {{ project.role }}
+                </RouterLink>
+                <small v-if="!member.projects?.length">Chưa tham gia project</small>
+              </td>
+              <td class="people-signals">
+                <span v-for="skill in (member.skills ?? []).slice(0, 3)" :key="skill">{{ skill }}</span>
+                <strong v-if="member.weeklyCapacityHours != null">{{ member.weeklyCapacityHours }}h/tuần</strong>
+                <small v-if="member.capacityState === 'assumed_default'">Capacity mặc định</small>
+                <small v-else-if="member.weeklyCapacityHours == null">Không có quyền xem dữ liệu năng lực</small>
               </td>
               <td>{{ joinedLabel(member.joinedAt) }}</td>
               <td class="row-action">
@@ -625,7 +649,7 @@ onMounted(async () => {
 
 table {
   width: 100%;
-  min-width: 720px;
+  min-width: 1060px;
   border-collapse: collapse;
 }
 
@@ -681,6 +705,42 @@ th {
 
 .role.owner {
   background: #dcfce7;
+  color: #166534;
+}
+
+.project-memberships,
+.people-signals {
+  min-width: 170px;
+}
+
+.project-memberships a,
+.people-signals span {
+  display: inline-flex;
+  margin: 0 5px 5px 0;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef3f0;
+  color: #285b42;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.people-signals span {
+  background: #eef3ff;
+  color: #405d98;
+}
+
+.project-memberships small,
+.people-signals small,
+.people-signals strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary, #687386);
+  font-size: 11px;
+}
+
+.people-signals strong {
   color: #166534;
 }
 

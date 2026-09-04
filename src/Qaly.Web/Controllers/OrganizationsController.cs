@@ -18,19 +18,22 @@ public class OrganizationsController : BaseApiController
     private readonly IMemberSkillEvidenceService _memberSkillEvidenceService;
     private readonly IPortfolioScheduleService _portfolioScheduleService;
     private readonly IProfessionalProfileService _professionalProfileService;
+    private readonly IAuditLogService _auditLogService;
 
     public OrganizationsController(
         IOrganizationService organizationService,
         ITaskSkillService taskSkillService,
         IMemberSkillEvidenceService memberSkillEvidenceService,
         IPortfolioScheduleService portfolioScheduleService,
-        IProfessionalProfileService professionalProfileService)
+        IProfessionalProfileService professionalProfileService,
+        IAuditLogService auditLogService)
     {
         _organizationService = organizationService;
         _taskSkillService = taskSkillService;
         _memberSkillEvidenceService = memberSkillEvidenceService;
         _portfolioScheduleService = portfolioScheduleService;
         _professionalProfileService = professionalProfileService;
+        _auditLogService = auditLogService;
     }
 
     [HttpGet]
@@ -75,6 +78,17 @@ public class OrganizationsController : BaseApiController
     public async Task<IActionResult> GetMembers(Guid id, CancellationToken ct = default)
     {
         var result = await _organizationService.GetMembersAsync(id, ct);
+        return StatusCode(result.StatusCode, result);
+    }
+
+    [HttpGet("{id:guid}/activity")]
+    public async Task<IActionResult> GetActivity(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        var result = await _auditLogService.GetByOrganizationAsync(id, page, pageSize, ct);
         return StatusCode(result.StatusCode, result);
     }
 

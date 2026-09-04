@@ -29,11 +29,16 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly QalyDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly IAuditLogService? _audit;
 
-    public OrganizationWorkRulebookService(QalyDbContext db, ICurrentUserService currentUser)
+    public OrganizationWorkRulebookService(
+        QalyDbContext db,
+        ICurrentUserService currentUser,
+        IAuditLogService? audit = null)
     {
         _db = db;
         _currentUser = currentUser;
+        _audit = audit;
     }
 
     public async Task<Result<IReadOnlyList<OrganizationWorkRuleSetDto>>> ListAsync(Guid organizationId, CancellationToken ct = default)
@@ -86,6 +91,15 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
             Revision = 1
         };
         _db.OrganizationWorkRuleSets.Add(entity);
+        if (_audit != null)
+        {
+            await _audit.StageAsync(
+                "CreateWorkRulebookDraft",
+                nameof(Organization),
+                organizationId.ToString(),
+                new { organizationId, entity.Id, entity.Version, RuleCount = request.Rules.Count },
+                ct);
+        }
         await _db.SaveChangesAsync(ct);
         return Result.Created(Map(entity));
     }
@@ -122,6 +136,15 @@ public sealed class OrganizationWorkRulebookService : IOrganizationWorkRulebookS
         entity.ActivatedByUserId = userId;
         entity.UpdatedAt = now;
         entity.Revision++;
+        if (_audit != null)
+        {
+            await _audit.StageAsync(
+                "ActivateWorkRulebook",
+                nameof(Organization),
+                organizationId.ToString(),
+                new { organizationId, RuleSetId = entity.Id, entity.Version },
+                ct);
+        }
         await _db.SaveChangesAsync(ct);
         return Result.Success(Map(entity));
     }

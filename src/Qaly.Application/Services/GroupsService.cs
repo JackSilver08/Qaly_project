@@ -119,7 +119,13 @@ public partial class GroupsService : IGroupsService
     [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Could not broadcast poll deleted realtime event. GroupId: {GroupId}, PollId: {PollId}.")]
     private static partial void LogCouldNotBroadcastPollDeleted(ILogger logger, Exception ex, Guid groupId, Guid pollId);
 
-    public async Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default)
+    public Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default)
+        => GetGroupsAsync(page, pageSize, search, null, ct);
+
+    public Task<Result<PagedResult<GroupDto>>> GetByOrganizationAsync(Guid organizationId, int page = 1, int pageSize = 100, string? search = null, CancellationToken ct = default)
+        => GetGroupsAsync(page, pageSize, search, organizationId, ct);
+
+    private async Task<Result<PagedResult<GroupDto>>> GetGroupsAsync(int page, int pageSize, string? search, Guid? organizationId, CancellationToken ct)
     {
         var currentUserId = _currentUserService.UserId;
         if (currentUserId == null)
@@ -131,15 +137,41 @@ public partial class GroupsService : IGroupsService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = GroupDetailsQuery();
+
+        if (organizationId.HasValue)
+        {
+            var organization = await _organizationRepo.GetByIdAsync(organizationId.Value, ct);
+            if (organization == null)
+            {
+                return Result.NotFound<PagedResult<GroupDto>>();
+            }
+
+            if (!organization.IsActive || !await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct))
+            {
+                return Result.Forbidden<PagedResult<GroupDto>>();
+            }
+
+            query = query.Where(group => group.OrganizationId == organizationId.Value);
+        }
+
+        query = query.Where(group => group.OrganizationId == null ||
+            (group.Organization != null && group.Organization.IsActive));
+
         if (!IsSystemAdmin())
         {
             query = query.Where(group =>
-                (group.OwnerId == currentUserId || group.Members.Any(member => member.UserId == currentUserId)) &&
-                (group.OrganizationId == null ||
-                 (group.Organization != null &&
-                  group.Organization.IsActive &&
-                  (group.Organization.OwnerId == currentUserId ||
-                   group.Organization.Members.Any(member => member.UserId == currentUserId)))));
+                group.OrganizationId == null
+                    ? group.OwnerId == currentUserId || group.Members.Any(member => member.UserId == currentUserId)
+                    : group.Organization != null &&
+                      (group.OwnerId == currentUserId ||
+                       group.Members.Any(member => member.UserId == currentUserId) ||
+                       group.Organization.OwnerId == currentUserId ||
+                       group.Organization.Members.Any(member =>
+                           member.UserId == currentUserId &&
+                           (member.Role == OrganizationRoleRules.Owner ||
+                            member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                            member.Role == "Admin" ||
+                            member.Role == "Manager"))));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -243,7 +275,7 @@ public partial class GroupsService : IGroupsService
             "Create",
             nameof(WorkGroup),
             group.Id.ToString(),
-            new { group.Name },
+            new { group.Name, group.OrganizationId },
             ct);
 
         return await GetByIdAsync(group.Id, ct);
@@ -279,7 +311,7 @@ public partial class GroupsService : IGroupsService
             "Update",
             nameof(WorkGroup),
             groupId.ToString(),
-            request,
+            new { group.OrganizationId, Request = request },
             ct);
 
         return await GetByIdAsync(groupId, ct);
@@ -2276,21 +2308,23 @@ public partial class GroupsService : IGroupsService
             return false;
         }
 
-        if (IsSystemAdmin())
-        {
-            return true;
-        }
-
         return await _groupRepo.GetQueryable()
             .AnyAsync(group =>
                 group.Id == groupId &&
-                (group.OwnerId == currentUserId ||
-                 group.Members.Any(member => member.UserId == currentUserId)) &&
                 (group.OrganizationId == null ||
                  (group.Organization != null &&
-                  group.Organization.IsActive &&
+                  group.Organization.IsActive)) &&
+                (IsSystemAdmin() ||
+                 group.OwnerId == currentUserId ||
+                 group.Members.Any(member => member.UserId == currentUserId) ||
+                 (group.Organization != null &&
                   (group.Organization.OwnerId == currentUserId ||
-                   group.Organization.Members.Any(member => member.UserId == currentUserId)))), ct);
+                   group.Organization.Members.Any(member =>
+                       member.UserId == currentUserId &&
+                       (member.Role == OrganizationRoleRules.Owner ||
+                        member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                        member.Role == "Admin" ||
+                        member.Role == "Manager"))))), ct);
     }
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct)
@@ -2307,14 +2341,14 @@ public partial class GroupsService : IGroupsService
             return false;
         }
 
-        if (IsSystemAdmin())
-        {
-            return true;
-        }
-
         if (!await CanAccessGroupAsync(groupId, ct))
         {
             return false;
+        }
+
+        if (IsSystemAdmin())
+        {
+            return true;
         }
 
         var membership = await _memberRepo.GetQueryable()
@@ -2322,18 +2356,29 @@ public partial class GroupsService : IGroupsService
             .Select(member => new { member.Role })
             .FirstOrDefaultAsync(ct);
 
-        if (membership == null)
+        if (membership != null && GroupRoleRules.CanManage(membership.Role))
         {
-            return false;
+            return true;
         }
 
-        return GroupRoleRules.CanManage(membership.Role);
+        return await _groupRepo.GetQueryable().AnyAsync(group =>
+            group.Id == groupId &&
+            group.Organization != null &&
+            group.Organization.IsActive &&
+            (group.Organization.OwnerId == currentUserId ||
+             group.Organization.Members.Any(member =>
+                 member.UserId == currentUserId &&
+                 (member.Role == OrganizationRoleRules.Owner ||
+                  member.Role == OrganizationRoleRules.OrganizationAdmin ||
+                  member.Role == "Admin" ||
+                  member.Role == "Manager"))), ct);
     }
 
     private IQueryable<WorkGroup> GroupDetailsQuery()
         => _groupRepo.GetQueryable()
             .Include(group => group.Owner)
             .Include(group => group.Organization)
+                .ThenInclude(organization => organization!.Members)
             .Include(group => group.Members)
                 .ThenInclude(member => member.User)
             .Include(group => group.Messages)
@@ -2347,6 +2392,14 @@ public partial class GroupsService : IGroupsService
             : currentMembership?.Role;
 
         if (currentRole == null && IsSystemAdmin())
+        {
+            currentRole = GroupRoleRules.Admin;
+        }
+
+        if (currentRole == null && group.Organization != null &&
+            (group.Organization.OwnerId == currentUserId ||
+             group.Organization.Members.Any(member =>
+                 member.UserId == currentUserId && OrganizationRoleRules.CanManageOrganization(member.Role))))
         {
             currentRole = GroupRoleRules.Admin;
         }

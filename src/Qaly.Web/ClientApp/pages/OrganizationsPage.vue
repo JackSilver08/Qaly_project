@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Building2, Pencil, Plus, RefreshCw, Search, Users, XCircle } from 'lucide-vue-next'
+import { ArrowUpRight, Building2, Pencil, Plus, RefreshCw, Search, Users, XCircle } from 'lucide-vue-next'
 import PageStatePanel from '../components/PageStatePanel.vue'
 import { confirmDialog } from '../composables/use-confirm-dialog'
 import { showError, showSuccess } from '../composables/use-toast'
@@ -154,8 +154,8 @@ async function save() {
       body: JSON.stringify(payload),
     })
     editorOpen.value = false
-    showSuccess('Đã tạo tổ chức. Bạn có thể thêm thành viên ngay bây giờ.')
-    await router.push({ path: '/organizations/users', query: { organization: created.id } })
+    showSuccess('Đã tạo tổ chức. Bạn có thể tạo project, group hoặc thêm thành viên ngay bây giờ.')
+    await router.push({ name: 'organization-overview', params: { organizationId: created.id } })
   } catch (error) {
     showError(
       errorMessage(
@@ -191,6 +191,10 @@ async function deactivate(item: Organization) {
 
 function openMembers(item: Organization) {
   router.push({ path: '/organizations/users', query: { organization: item.id } })
+}
+
+function openOverview(item: Organization) {
+  router.push({ name: 'organization-overview', params: { organizationId: item.id } })
 }
 
 onMounted(load)
@@ -303,6 +307,15 @@ onMounted(load)
                 </span>
               </td>
               <td class="actions">
+                <button type="button"
+                  class="action-button"
+                  title="Mở tổng quan"
+                  :aria-label="`Mở tổng quan ${item.name}`"
+                  :disabled="!item.isActive"
+                  @click="openOverview(item)"
+                >
+                  <ArrowUpRight :size="17" />
+                </button>
                 <button type="button"
                   class="action-button"
                   title="Quản lý thành viên"

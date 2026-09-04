@@ -131,4 +131,25 @@ public record OrganizationMemberDto(
     string FullName,
     string Email,
     string Role,
-    DateTimeOffset JoinedAt);
+    DateTimeOffset JoinedAt,
+    IReadOnlyList<OrganizationProjectMembershipDto>? Projects = null,
+    decimal? WeeklyCapacityHours = null,
+    string? CapacityState = null,
+    string? TimeZoneId = null,
+    IReadOnlyList<OrganizationMemberAvailabilityDto>? AvailabilityWindows = null,
+    string? CapacityRowVersion = null,
+    IReadOnlyList<string>? Skills = null);
+
+public record OrganizationProjectMembershipDto(
+    Guid ProjectId,
+    string ProjectName,
+    string ProjectCode,
+    string Role);
+
+public record OrganizationMemberAvailabilityDto(
+    Guid Id,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Kind,
+    decimal? AvailableHours,
+    string? RowVersion);

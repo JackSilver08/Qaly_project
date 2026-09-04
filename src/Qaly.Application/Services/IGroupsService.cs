@@ -7,6 +7,7 @@ namespace Qaly.Application.Services;
 public interface IGroupsService
 {
     Task<Result<PagedResult<GroupDto>>> GetMineAsync(int page = 1, int pageSize = 20, string? search = null, CancellationToken ct = default);
+    Task<Result<PagedResult<GroupDto>>> GetByOrganizationAsync(Guid organizationId, int page = 1, int pageSize = 100, string? search = null, CancellationToken ct = default);
     Task<Result<GroupDto>> GetByIdAsync(Guid groupId, CancellationToken ct = default);
     Task<Result<GroupDto>> CreateAsync(CreateGroupRequest request, CancellationToken ct = default);
     Task<Result<GroupDto>> UpdateAsync(Guid groupId, UpdateGroupRequest request, CancellationToken ct = default);

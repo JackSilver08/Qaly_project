@@ -360,7 +360,7 @@ test('timeline renders the real Gantt contract instead of dashboard task dates',
   await login(page, `/projects/${projectId}`)
   await openDemoMap(page)
 
-  await page.getByRole('button', { name: 'Timeline View' }).click()
+  await page.getByRole('button', { name: /Dòng thời gian|Timeline View/i }).click()
   await expect(page.locator('.timeline-task-label')).toContainText('Unblock release milestone')
   await expect(page.locator('.timeline-bar')).toBeVisible()
   await expect(page.locator('.timeline-bar')).toContainText('45%')

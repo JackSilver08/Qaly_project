@@ -72,6 +72,7 @@ const router = useRouter();
 // Erumi AI Assistant & Onboarding Guide State
 const showErumiDiffModal = ref(false)
 const showErumiAiPanel = ref(false)
+const showAiFastbar = ref(false)
 const showOnboardingGuideModal = ref(false)
 const erumiProposal = ref<ErumiRoadmapDiffProposalDto | null>(null)
 const isAskingErumi = ref(false)
@@ -1070,7 +1071,7 @@ const handleRollbackErumiSnapshot = async () => {
         <div class="ai-title-wrap">
           <span class="ai-glow-dot"></span>
           <span class="ai-badge"><BootstrapIcon name="stars" /> ERUMI AI ROADMAP CO-PILOT</span>
-          <span class="ai-desc text-muted">Trợ lý Lộ Trình: Phân tích rủi ro, mở rộng Phase, cân bằng tải & dự báo</span>
+          <span class="ai-desc text-muted">Bộ công cụ hỗ trợ lập kế hoạch và kiểm soát rủi ro</span>
         </div>
         <div class="ai-right-badges">
           <button
@@ -1083,11 +1084,25 @@ const handleRollbackErumiSnapshot = async () => {
             <BootstrapIcon name="arrow-counterclockwise" />
             Hoàn tác AI snapshot
           </button>
+          <button
+            type="button"
+            class="ai-fastbar-toggle"
+            :aria-expanded="showAiFastbar"
+            aria-controls="roadmap-ai-fast-actions"
+            @click="showAiFastbar = !showAiFastbar"
+          >
+            <BootstrapIcon :name="showAiFastbar ? 'chevron-up' : 'stars'" />
+            <span>{{ showAiFastbar ? 'Thu gọn' : 'Mở 6 công cụ AI' }}</span>
+          </button>
         </div>
       </div>
 
       <!-- 6 Fast Action Buttons Grid -->
-      <div class="ai-fast-actions-grid">
+      <div
+        v-show="showAiFastbar"
+        id="roadmap-ai-fast-actions"
+        class="ai-fast-actions-grid"
+      >
         <button
           type="button"
           class="ai-action-card card-purple"
@@ -1176,10 +1191,11 @@ const handleRollbackErumiSnapshot = async () => {
             <Compass :size="26" class="text-primary" />
           </div>
           <div>
-            <h3>Lộ Trình Dự Án & Mốc Tiến Độ</h3>
+            <span class="roadmap-eyebrow">Kế hoạch bàn giao</span>
+            <h3>Lộ trình dự án</h3>
             <p class="text-muted text-sm">
-              Theo dõi tiến độ nghiệm thu giai đoạn, quản lý mốc bàn giao và
-              kiểm soát rủi ro dự án.
+              Theo dõi các giai đoạn, tiến độ nghiệm thu và mốc bàn giao trên
+              một hành trình thống nhất.
             </p>
           </div>
         </div>
@@ -1195,7 +1211,7 @@ const handleRollbackErumiSnapshot = async () => {
             @click="viewMode = 'journey'"
           >
             <BootstrapIcon name="signpost-split" />
-            <span>Journey View</span>
+            <span>Hành trình</span>
           </button>
           <button
             type="button"
@@ -1205,7 +1221,7 @@ const handleRollbackErumiSnapshot = async () => {
             @click="viewMode = 'timeline'"
           >
             <BootstrapIcon name="calendar3" />
-            <span>Timeline View</span>
+            <span>Dòng thời gian</span>
           </button>
         </div>
 
@@ -1345,20 +1361,77 @@ const handleRollbackErumiSnapshot = async () => {
     <template v-else>
       <template v-if="viewMode === 'journey'">
         <div class="roadmap-track-card glass-card">
-          <!-- Client Executive Executive Bar & Filters -->
+          <div class="journey-section-header">
+            <div>
+              <span class="roadmap-eyebrow">Toàn cảnh lộ trình</span>
+              <h4>Hành trình bàn giao</h4>
+              <p>Chọn một mốc để xem mục tiêu, công việc và thao tác liên quan.</p>
+            </div>
+
+            <!-- Filter Pills -->
+            <div class="milestone-filter-group" aria-label="Lọc mốc tiến độ">
+              <button
+                type="button"
+                class="filter-pill"
+                :class="{ active: milestoneFilter === 'all' }"
+                :aria-pressed="milestoneFilter === 'all'"
+                @click="milestoneFilter = 'all'"
+              >
+                <BootstrapIcon name="list-ul" />
+                Tất cả <span class="filter-count">{{ sprints.length }}</span>
+              </button>
+              <button
+                type="button"
+                class="filter-pill"
+                :class="{ active: milestoneFilter === 'active' }"
+                :aria-pressed="milestoneFilter === 'active'"
+                @click="milestoneFilter = 'active'"
+              >
+                <BootstrapIcon name="lightning-charge" />
+                Đang chạy
+              </button>
+              <button
+                type="button"
+                class="filter-pill"
+                :class="{ active: milestoneFilter === 'overdue' }"
+                :aria-pressed="milestoneFilter === 'overdue'"
+                @click="milestoneFilter = 'overdue'"
+              >
+                <BootstrapIcon name="exclamation-triangle" />
+                Trễ hạn
+              </button>
+              <button
+                type="button"
+                class="filter-pill"
+                :class="{ active: milestoneFilter === 'completed' }"
+                :aria-pressed="milestoneFilter === 'completed'"
+                @click="milestoneFilter = 'completed'"
+              >
+                <BootstrapIcon name="check-circle" />
+                Đã xong
+              </button>
+            </div>
+          </div>
+
+          <!-- Executive project metrics -->
           <div class="roadmap-metrics-bar">
           <div class="metric-pill">
-            <span class="metric-label">Trạng thái Sức khỏe Dự án</span>
+            <span class="metric-icon metric-icon--health"><Zap :size="17" /></span>
+            <div class="metric-copy">
+            <span class="metric-label">Sức khỏe dự án</span>
             <span
               :class="`badge-tag tag-${projectHealthStatus.tone}`"
               class="health-tag"
             >
-              <Zap :size="13" /> {{ projectHealthStatus.label }}
+              {{ projectHealthStatus.label }}
             </span>
+            </div>
           </div>
 
           <div class="metric-pill">
-            <span class="metric-label">Mốc Tập trung Hiện tại</span>
+            <span class="metric-icon"><Navigation :size="17" /></span>
+            <div class="metric-copy">
+            <span class="metric-label">Mốc đang tập trung</span>
             <strong class="metric-value text-primary">
               {{
                 currentPositionMilestone
@@ -1366,10 +1439,13 @@ const handleRollbackErumiSnapshot = async () => {
                   : "Đã hoàn thành tất cả mốc"
               }}
             </strong>
+            </div>
           </div>
 
           <div class="metric-pill">
-            <span class="metric-label">Tiến độ Nghiệm thu Tổng thể</span>
+            <span class="metric-icon metric-icon--success"><CheckCircle2 :size="17" /></span>
+            <div class="metric-copy">
+            <span class="metric-label">Tiến độ nghiệm thu</span>
             <div class="metric-progress-wrap">
               <div class="mini-progress-rail">
                 <div
@@ -1381,60 +1457,20 @@ const handleRollbackErumiSnapshot = async () => {
                 >{{ overallProgress }}%</strong
               >
             </div>
+            </div>
           </div>
 
           <div class="metric-pill">
-            <span class="metric-label">Tổng quy mô Mốc</span>
-            <strong class="metric-value">{{ sprints.length }} Giai đoạn</strong>
-          </div>
-
-          <!-- Filter Pills -->
-          <div class="milestone-filter-group">
-            <button
-              type="button"
-              class="filter-pill"
-              :class="{ active: milestoneFilter === 'all' }"
-              :aria-pressed="milestoneFilter === 'all'"
-              @click="milestoneFilter = 'all'"
-            >
-              <BootstrapIcon name="list-ul" />
-              Tất cả ({{ sprints.length }})
-            </button>
-            <button
-              type="button"
-              class="filter-pill"
-              :class="{ active: milestoneFilter === 'active' }"
-              :aria-pressed="milestoneFilter === 'active'"
-              @click="milestoneFilter = 'active'"
-            >
-              <BootstrapIcon name="lightning-charge" />
-              Đang chạy
-            </button>
-            <button
-              type="button"
-              class="filter-pill"
-              :class="{ active: milestoneFilter === 'overdue' }"
-              :aria-pressed="milestoneFilter === 'overdue'"
-              @click="milestoneFilter = 'overdue'"
-            >
-              <BootstrapIcon name="exclamation-triangle" />
-              Trễ hạn
-            </button>
-            <button
-              type="button"
-              class="filter-pill"
-              :class="{ active: milestoneFilter === 'completed' }"
-              :aria-pressed="milestoneFilter === 'completed'"
-              @click="milestoneFilter = 'completed'"
-            >
-              <BootstrapIcon name="check-circle" />
-              Đã xong
-            </button>
+            <span class="metric-icon metric-icon--violet"><Layers :size="17" /></span>
+            <div class="metric-copy">
+            <span class="metric-label">Quy mô lộ trình</span>
+            <strong class="metric-value">{{ sprints.length }} giai đoạn</strong>
+            </div>
           </div>
         </div>
 
         <!-- Horizontal Connected Milestone Journey Track -->
-        <div class="roadmap-scroll-wrapper no-scrollbar">
+        <div v-if="filteredSprints.length" class="roadmap-scroll-wrapper no-scrollbar">
           <div class="roadmap-visual-container">
             <!-- Connecting Line -->
             <div class="connecting-line">
@@ -1542,6 +1578,11 @@ const handleRollbackErumiSnapshot = async () => {
               </div>
             </div>
           </div>
+        </div>
+        <div v-else class="roadmap-filter-empty">
+          <Search :size="22" />
+          <strong>Không có mốc phù hợp</strong>
+          <span>Chọn một bộ lọc khác để tiếp tục theo dõi lộ trình.</span>
         </div>
       </div>
       </template>
@@ -1745,6 +1786,17 @@ const handleRollbackErumiSnapshot = async () => {
                 getDaysRemaining(activeMilestone.endDate).text
               }}</span>
             </div>
+
+            <div class="detail-progress-summary">
+              <div>
+                <span>Tiến độ nghiệm thu</span>
+                <strong>{{ activeMilestone.progress }}%</strong>
+              </div>
+              <div class="detail-progress-rail" aria-hidden="true">
+                <span :style="{ width: `${activeMilestone.progress}%` }"></span>
+              </div>
+              <small>{{ activeMilestone.completedTaskCount }}/{{ activeMilestone.taskCount }} công việc hoàn thành</small>
+            </div>
           </div>
 
           <div class="detail-header-actions">
@@ -1752,7 +1804,7 @@ const handleRollbackErumiSnapshot = async () => {
             <template v-if="isProjectAdmin && !isClientViewMode">
               <button
                 type="button"
-                class="btn btn-outline"
+                class="milestone-action-button milestone-action-button--edit"
                 @click="openEdit(activeMilestone)"
                 title="Chỉnh sửa tên, deadline, goal"
               >
@@ -1761,12 +1813,13 @@ const handleRollbackErumiSnapshot = async () => {
               </button>
               <button
                 type="button"
-                class="btn btn-danger-ghost"
+                class="milestone-action-button milestone-action-button--delete"
                 @click="handleDeleteMilestone(activeMilestone.id)"
                 aria-label="Xóa mốc"
                 title="Xóa mốc"
               >
                 <BootstrapIcon name="trash3" />
+                <span>Xóa mốc</span>
               </button>
             </template>
           </div>
@@ -2413,16 +2466,19 @@ const handleRollbackErumiSnapshot = async () => {
           <div class="confirmation-actions">
             <button
               type="button"
-              class="btn btn--ghost"
+              class="roadmap-confirm-button roadmap-confirm-button--cancel"
+              data-modal-initial-focus="true"
               @click="confirmation = null"
             >
               <BootstrapIcon name="x-lg" /> Hủy
             </button>
             <button
               type="button"
-              class="btn"
+              class="roadmap-confirm-button"
               :class="
-                confirmation.type === 'delete' ? 'btn--danger' : 'btn--primary'
+                confirmation.type === 'delete'
+                  ? 'roadmap-confirm-button--danger'
+                  : 'roadmap-confirm-button--complete'
               "
               @click="confirmMilestoneAction"
             >
@@ -5649,6 +5705,579 @@ const handleRollbackErumiSnapshot = async () => {
 
   .fast-access-toolbar {
     padding: 12px 14px;
+  }
+}
+
+/* Roadmap workspace 2.0: calm hierarchy, scannable journey, explicit actions. */
+.project-roadmap-shell > * {
+  order: 4;
+}
+
+.project-roadmap-shell > .role-mode-bar {
+  order: 0;
+}
+
+.project-roadmap-shell > .roadmap-header {
+  order: 1;
+}
+
+.project-roadmap-shell > .roadmap-ai-fastbar {
+  order: 2;
+}
+
+.project-roadmap-shell > .roadmap-ai-panel {
+  order: 3;
+}
+
+.roadmap-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.roadmap-header {
+  background:
+    radial-gradient(circle at 92% 0%, rgba(96, 165, 250, 0.16), transparent 34%),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.roadmap-header__title {
+  min-width: 320px;
+}
+
+.roadmap-header__actions {
+  align-items: center;
+}
+
+.roadmap-header__view-switch {
+  min-height: 44px;
+  padding: 4px;
+}
+
+.view-mode-pill {
+  min-height: 34px;
+  padding-inline: 13px;
+}
+
+.roadmap-ai-fastbar {
+  padding: 12px 16px;
+  border-color: #dbe5f2;
+  background: linear-gradient(120deg, #f8fbff, #ffffff 58%, #faf8ff);
+}
+
+.ai-fastbar-header {
+  min-height: 40px;
+}
+
+.ai-fastbar-toggle {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 13px;
+  color: #214b9a;
+  background: #ffffff;
+  border: 1px solid #cbd9ed;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+  box-shadow: 0 3px 9px rgba(31, 65, 114, 0.07);
+  transition: background-color 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+
+.ai-fastbar-toggle:hover {
+  background: #eff6ff;
+  border-color: #89a9d8;
+  transform: translateY(-1px);
+}
+
+.roadmap-ai-fastbar .ai-fast-actions-grid {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e3eaf4;
+}
+
+.journey-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e3eaf3;
+}
+
+.journey-section-header h4 {
+  margin: 0;
+  color: #13213a;
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}
+
+.journey-section-header p {
+  margin: 5px 0 0;
+  color: #687990;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.journey-section-header .milestone-filter-group {
+  flex: 0 0 auto;
+  padding: 4px;
+  background: #f3f6fa;
+  border: 1px solid #e1e8f1;
+  border-radius: 11px;
+}
+
+.filter-count {
+  min-width: 19px;
+  height: 19px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: 2px;
+  padding-inline: 5px;
+  color: inherit;
+  background: rgba(100, 116, 139, 0.12);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.filter-pill.active .filter-count {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.roadmap-metrics-bar {
+  grid-template-columns: 1.05fr minmax(250px, 1.7fr) 1.2fr 0.85fr;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5ebf3;
+}
+
+.metric-pill {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 82px;
+  padding: 15px 18px;
+}
+
+.metric-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #2563eb;
+  background: #eaf2ff;
+  border-radius: 11px;
+}
+
+.metric-icon--health {
+  color: #b66a0a;
+  background: #fff4dc;
+}
+
+.metric-icon--success {
+  color: #087a55;
+  background: #e6f7f0;
+}
+
+.metric-icon--violet {
+  color: #6d42c7;
+  background: #f1ebff;
+}
+
+.metric-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.metric-copy .metric-label {
+  font-size: 10px;
+  letter-spacing: 0.075em;
+}
+
+.metric-copy .metric-value {
+  max-width: 100%;
+  overflow: hidden;
+  color: #17233a;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-copy .health-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-copy .metric-progress-wrap {
+  width: 100%;
+}
+
+.roadmap-scroll-wrapper {
+  padding: 58px 26px 30px;
+  background:
+    linear-gradient(180deg, rgba(238, 246, 255, 0.84), rgba(255, 255, 255, 0.1) 68%),
+    #ffffff;
+}
+
+.milestone-node-card {
+  min-height: 174px;
+  padding: 15px;
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(30, 55, 88, 0.06);
+}
+
+.milestone-node:hover .milestone-node-card {
+  transform: translateY(-3px);
+  border-color: #9db9e6;
+  box-shadow: 0 13px 28px rgba(37, 99, 235, 0.12);
+}
+
+.milestone-node.is-selected .milestone-node-card {
+  background: linear-gradient(180deg, #ffffff, #f4f8ff);
+  border-color: #4e86e8;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.15);
+}
+
+.node-title {
+  min-height: 38px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.roadmap-filter-empty {
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  padding: 28px;
+  color: #718198;
+  text-align: center;
+  background: #fbfcfe;
+}
+
+.roadmap-filter-empty strong {
+  color: #26364f;
+  font-size: 14px;
+}
+
+.roadmap-filter-empty span {
+  font-size: 12px;
+}
+
+.milestone-detail-panel {
+  border-top: 3px solid #4f86e8;
+}
+
+.detail-header {
+  gap: 26px;
+  padding: 24px 22px 20px;
+}
+
+.detail-header-left {
+  min-width: 0;
+  flex: 1;
+}
+
+.detail-header-actions {
+  align-items: center;
+}
+
+.detail-progress-summary {
+  max-width: 460px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  margin-top: 15px;
+  padding: 12px 14px;
+  background: #f7faff;
+  border: 1px solid #dce7f6;
+  border-radius: 12px;
+}
+
+.detail-progress-summary > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  grid-column: 1 / -1;
+  gap: 16px;
+}
+
+.detail-progress-summary span,
+.detail-progress-summary small {
+  color: #677991;
+  font-size: 11px;
+}
+
+.detail-progress-summary strong {
+  color: #164daf;
+  font-size: 14px;
+}
+
+.detail-progress-rail {
+  height: 7px;
+  overflow: hidden;
+  background: #dfe8f4;
+  border-radius: 999px;
+}
+
+.detail-progress-rail span {
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #2563eb, #4f8df7);
+  border-radius: inherit;
+  transition: width 0.4s ease;
+}
+
+.milestone-action-button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 13px;
+  color: #334761;
+  background: #ffffff;
+  border: 1px solid #ced9e8;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 7px rgba(35, 58, 88, 0.05);
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
+}
+
+.milestone-action-button:hover {
+  color: #1748a7;
+  background: #f4f8ff;
+  border-color: #83a8df;
+  transform: translateY(-1px);
+}
+
+.milestone-action-button--delete {
+  color: #b52d35;
+  background: #fffafa;
+  border-color: #f0c6ca;
+}
+
+.milestone-action-button--delete:hover {
+  color: #9f202a;
+  background: #fff0f1;
+  border-color: #df858d;
+}
+
+.fast-access-toolbar {
+  border-top: 1px solid #dfe8f4;
+  border-bottom: 1px solid #dfe8f4;
+}
+
+.toolbar-title {
+  color: #24466f;
+  font-size: 12px;
+}
+
+.confirmation-modal {
+  width: min(500px, calc(100vw - 32px));
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #dce5ef;
+  border-radius: 20px;
+  box-shadow: 0 30px 80px rgba(10, 27, 50, 0.3);
+}
+
+.confirmation-actions {
+  padding-top: 4px;
+}
+
+.roadmap-confirm-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.roadmap-confirm-button:hover {
+  transform: translateY(-1px);
+}
+
+.roadmap-confirm-button--cancel {
+  color: #40516a;
+  background: #ffffff;
+  border-color: #cbd6e4;
+}
+
+.roadmap-confirm-button--cancel:hover {
+  background: #f4f7fb;
+  border-color: #9eafc4;
+}
+
+.roadmap-confirm-button--complete {
+  color: #ffffff;
+  background: #087a55;
+  border-color: #087a55;
+  box-shadow: 0 7px 16px rgba(8, 122, 85, 0.2);
+}
+
+.roadmap-confirm-button--complete:hover {
+  background: #066844;
+  border-color: #066844;
+}
+
+.roadmap-confirm-button--danger {
+  color: #ffffff;
+  background: #c9363f;
+  border-color: #c9363f;
+  box-shadow: 0 7px 16px rgba(201, 54, 63, 0.2);
+}
+
+.roadmap-confirm-button--danger:hover {
+  background: #aa2630;
+  border-color: #aa2630;
+}
+
+@media (max-width: 1100px) {
+  .journey-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .journey-section-header .milestone-filter-group {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .roadmap-metrics-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-pill:nth-child(2) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .roadmap-header__title {
+    min-width: 0;
+  }
+
+  .ai-fastbar-header,
+  .ai-right-badges {
+    width: 100%;
+  }
+
+  .ai-fastbar-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ai-right-badges,
+  .ai-fastbar-toggle {
+    width: 100%;
+  }
+
+  .journey-section-header {
+    padding: 17px;
+  }
+
+  .journey-section-header .milestone-filter-group {
+    width: 100%;
+  }
+
+  .roadmap-metrics-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-pill {
+    min-height: 68px;
+    padding: 12px 16px;
+    border-right: 0;
+    border-bottom: 1px solid #e4ebf3;
+  }
+
+  .metric-pill:last-child {
+    border-bottom: 0;
+  }
+
+  .detail-header {
+    padding: 19px 16px 17px;
+  }
+
+  .detail-header-actions,
+  .milestone-action-button {
+    width: 100%;
+  }
+
+  .roadmap-confirm-button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .roadmap-header__view-switch,
+  .journey-section-header .milestone-filter-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .filter-pill {
+    justify-content: center;
+  }
+
+  .confirmation-modal {
+    padding: 22px 18px 18px;
+    border-radius: 16px;
+  }
+
+  .confirmation-actions {
+    flex-direction: column-reverse;
+  }
+
+  .roadmap-confirm-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-fastbar-toggle,
+  .milestone-node-card,
+  .milestone-action-button,
+  .roadmap-confirm-button,
+  .detail-progress-rail span {
+    transition: none;
   }
 }
 </style>

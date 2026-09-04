@@ -41,9 +41,11 @@ public class ProjectsController : BaseApiController
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, CancellationToken ct = default)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null, [FromQuery] Guid? organizationId = null, CancellationToken ct = default)
     {
-        var result = await _projectService.GetAllAsync(page, pageSize, search, ct);
+        var result = organizationId.HasValue
+            ? await _projectService.GetByOrganizationAsync(organizationId.Value, page, pageSize, search, ct)
+            : await _projectService.GetAllAsync(page, pageSize, search, ct);
         return StatusCode(result.StatusCode, result);
     }
 

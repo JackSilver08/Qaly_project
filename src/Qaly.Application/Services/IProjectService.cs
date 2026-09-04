@@ -7,6 +7,7 @@ public interface IProjectService
 {
     Task<Result<ProjectDto>> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<Result<PagedResult<ProjectDto>>> GetAllAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default);
+    Task<Result<PagedResult<ProjectDto>>> GetByOrganizationAsync(Guid organizationId, int page = 1, int pageSize = 100, string? search = null, CancellationToken ct = default);
     Task<Result<PagedResult<ProjectDto>>> GetByUserAsync(Guid userId, int page = 1, int pageSize = 10, CancellationToken ct = default);
     Task<Result<ProjectDto>> CreateAsync(CreateProjectDto dto, CancellationToken ct = default);
     Task<Result<ProjectDto>> UpdateAsync(Guid id, UpdateProjectDto dto, CancellationToken ct = default);

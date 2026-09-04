@@ -993,7 +993,11 @@ public class ErumiChatServiceTests : IDisposable
         var firstProjectId = Guid.NewGuid();
         var secondProjectId = Guid.NewGuid();
         _projectServiceMock
-            .Setup(service => service.GetAllAsync(1, 100, null, It.IsAny<CancellationToken>()))
+            .Setup(service => service.GetAllAsync(
+                page: 1,
+                pageSize: 100,
+                search: null,
+                ct: It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new PagedResult<ProjectDto>
             {
                 Items = new[]
@@ -1158,7 +1162,11 @@ public class ErumiChatServiceTests : IDisposable
             .Setup(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new WorkspaceAnalyticsDto(0, 0, 0, 0, 0)));
         _projectServiceMock
-            .Setup(service => service.GetAllAsync(1, 100, null, It.IsAny<CancellationToken>()))
+            .Setup(service => service.GetAllAsync(
+                page: 1,
+                pageSize: 100,
+                search: null,
+                ct: It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(new PagedResult<ProjectDto>
             {
                 Items = [],

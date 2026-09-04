@@ -30,9 +30,11 @@ public class GroupsController : BaseApiController
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetMine([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, CancellationToken ct = default)
+    public async Task<IActionResult> GetMine([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, [FromQuery] Guid? organizationId = null, CancellationToken ct = default)
     {
-        var result = await _groupsService.GetMineAsync(page, pageSize, search, ct);
+        var result = organizationId.HasValue
+            ? await _groupsService.GetByOrganizationAsync(organizationId.Value, page, pageSize, search, ct)
+            : await _groupsService.GetMineAsync(page, pageSize, search, ct);
         return StatusCode(result.StatusCode, result);
     }
 

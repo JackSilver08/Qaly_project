@@ -73,6 +73,70 @@ public class AuditLogService : IAuditLogService
         return await PageAsync(query, page, pageSize, ct);
     }
 
+    public async Task<Result<PagedResult<AuditLogDto>>> GetByOrganizationAsync(
+        Guid organizationId,
+        int page = 1,
+        int pageSize = 50,
+        CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var currentUserId = _currentUserService.UserId;
+        if (currentUserId == null)
+        {
+            return Result.Forbidden<PagedResult<AuditLogDto>>();
+        }
+
+        var organization = await _context.Organizations
+            .AsNoTracking()
+            .Include(item => item.Members)
+            .FirstOrDefaultAsync(item => item.Id == organizationId, ct);
+        if (organization == null)
+        {
+            return Result.NotFound<PagedResult<AuditLogDto>>();
+        }
+
+        if (!organization.IsActive)
+        {
+            return Result.Forbidden<PagedResult<AuditLogDto>>();
+        }
+
+        var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
+        var hasAccess = isSystemAdmin ||
+            organization.OwnerId == currentUserId ||
+            organization.Members.Any(member => member.UserId == currentUserId);
+        if (!hasAccess)
+        {
+            return Result.Forbidden<PagedResult<AuditLogDto>>();
+        }
+
+        var organizationEntityId = organizationId.ToString();
+        var projectIds = await _context.Projects
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(project => project.OrganizationId == organizationId)
+            .Select(project => project.Id)
+            .ToListAsync(ct);
+        var projectEntityIds = projectIds.Select(id => id.ToString()).ToList();
+
+        var groupIds = await _context.WorkGroups
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(group => group.OrganizationId == organizationId)
+            .Select(group => group.Id)
+            .ToListAsync(ct);
+        var groupEntityIds = groupIds.Select(id => id.ToString()).ToList();
+
+        var query = AuditLogQuery().Where(log =>
+            (log.EntityType == nameof(Organization) && log.EntityId == organizationEntityId) ||
+            (log.EntityType == nameof(Project) && projectEntityIds.Contains(log.EntityId)) ||
+            (log.EntityType == nameof(WorkGroup) && groupEntityIds.Contains(log.EntityId)) ||
+            (log.ChangesJson != null && log.ChangesJson.Contains(organizationEntityId)));
+
+        return await PageAsync(query, page, pageSize, ct);
+    }
+
     public async Task<Result<PagedResult<AuditLogDto>>> GetRecentWorkspaceActivityAsync(int limit = 10, CancellationToken ct = default)
     {
         limit = Math.Clamp(limit, 1, 100);

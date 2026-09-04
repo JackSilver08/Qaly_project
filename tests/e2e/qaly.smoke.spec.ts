@@ -394,7 +394,7 @@ test("should render database-backed Gantt dates on the project timeline", async 
 
         await page.goto(`/projects/${project.id}`);
         await page.getByRole("button", { name: "Lộ Trình Dự Án" }).click();
-        await page.getByRole("button", { name: "Timeline View" }).click();
+        await page.getByRole("button", { name: /Dòng thời gian|Timeline View/i }).click();
         await expect(page.locator(".timeline-task-label")).toContainText(taskTitle);
         await expect(page.locator(".timeline-bar")).toBeVisible();
     } finally {

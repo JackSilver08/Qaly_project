@@ -246,6 +246,9 @@ export interface ProjectDto {
     progressPercentage: number;
     labels: ProjectLabelDto[];
     createdAt: string;
+    organizationId?: string | null;
+    organizationName?: string | null;
+    sourceGroupId?: string | null;
     archivedAt?: string | null;
     permissions?: ProjectPermissionsDto | null;
 }

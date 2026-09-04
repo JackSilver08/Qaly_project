@@ -18,6 +18,8 @@ import {
 import { ApiError, apiResult, errorMessage } from '../../utils/api-client'
 import { showError, showSuccess } from '../../composables/use-toast'
 
+const props = defineProps<{ organizationId?: string }>()
+
 type BudgetScope = {
   scopeType: 'organization' | 'project'
   scopeId: string
@@ -206,7 +208,10 @@ async function loadScopes() {
   permissionDenied.value = false
   loadError.value = ''
   try {
-    scopes.value = await apiResult<BudgetScope[]>('/api/ai/budget/scopes')
+    const loadedScopes = await apiResult<BudgetScope[]>('/api/ai/budget/scopes')
+    scopes.value = props.organizationId
+      ? loadedScopes.filter(scope => scope.scopeType === 'organization' && scope.organizationId === props.organizationId)
+      : loadedScopes
     if (!scopes.value.length) {
       permissionDenied.value = true
       return
@@ -326,6 +331,11 @@ watch(selectedScopeKey, (next, previous) => {
 
 watch(rangeDays, () => {
   if (selectedScope.value) loadSnapshot()
+})
+
+watch(() => props.organizationId, () => {
+  selectedScopeKey.value = ''
+  void loadScopes()
 })
 
 onMounted(loadScopes)

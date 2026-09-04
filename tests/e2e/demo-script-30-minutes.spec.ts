@@ -126,9 +126,9 @@ test('DEMO-30M chạy xuyên suốt đúng kịch bản thuyết trình', async 
     await milestone.click()
     await expect(roadmap).toContainText(/Mục tiêu|task|thành viên|ngày|trạng thái/i)
 
-    await roadmap.getByRole('button', { name: /Timeline View/i }).click()
+    await roadmap.getByRole('button', { name: /Dòng thời gian|Timeline View/i }).click()
     await expect(roadmap).toContainText(/Dòng thời gian Roadmap|Không có task có ngày/i)
-    await roadmap.getByRole('button', { name: /Journey View/i }).click()
+    await roadmap.getByRole('button', { name: /Hành trình|Journey View/i }).click()
     await roadmap.getByRole('button', { name: /Đang chạy/i }).click()
     await expect(roadmap.locator('.milestone-filter-group')).toBeVisible()
   })

@@ -89,7 +89,13 @@ public class ProjectService : IProjectService
         return Result.Success(ToDtoWithPermissions(project, customRoles));
     }
 
-    public async Task<Result<PagedResult<ProjectDto>>> GetAllAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default)
+    public Task<Result<PagedResult<ProjectDto>>> GetAllAsync(int page = 1, int pageSize = 10, string? search = null, CancellationToken ct = default)
+        => GetProjectsAsync(page, pageSize, search, null, ct);
+
+    public Task<Result<PagedResult<ProjectDto>>> GetByOrganizationAsync(Guid organizationId, int page = 1, int pageSize = 100, string? search = null, CancellationToken ct = default)
+        => GetProjectsAsync(page, pageSize, search, organizationId, ct);
+
+    private async Task<Result<PagedResult<ProjectDto>>> GetProjectsAsync(int page, int pageSize, string? search, Guid? organizationId, CancellationToken ct)
     {
         if (!await HasActiveCurrentUserAsync(ct))
         {
@@ -106,6 +112,22 @@ public class ProjectService : IProjectService
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = ProjectDetailsQuery();
+
+        if (organizationId.HasValue)
+        {
+            var organization = await _organizationRepo.GetByIdAsync(organizationId.Value, ct);
+            if (organization == null)
+            {
+                return Result.NotFound<PagedResult<ProjectDto>>();
+            }
+
+            if (!organization.IsActive || !await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct))
+            {
+                return Result.Forbidden<PagedResult<ProjectDto>>();
+            }
+
+            query = query.Where(project => project.OrganizationId == organizationId.Value);
+        }
 
         if (!IsAdmin())
         {
@@ -238,7 +260,7 @@ public class ProjectService : IProjectService
             "Create",
             nameof(Project),
             project.Id.ToString(),
-            new { project.Name },
+            new { project.Name, project.OrganizationId, project.SourceGroupId },
             ct);
 
         return await GetByIdAsync(project.Id, ct);

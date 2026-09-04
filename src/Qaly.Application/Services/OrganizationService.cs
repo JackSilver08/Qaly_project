@@ -15,6 +15,9 @@ public class OrganizationService : IOrganizationService
     private readonly IRepository<User> _userRepo;
     private readonly IRepository<ModeratorAssignment> _moderatorAssignmentRepo;
     private readonly IRepository<ProfessionalProfileDefinition> _professionalProfileDefinitions;
+    private readonly IRepository<ProjectMember>? _projectMemberRepo;
+    private readonly IRepository<OrganizationMemberCapacityProfile>? _capacityProfileRepo;
+    private readonly IRepository<TaskCompletionAttribution>? _skillAttributionRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
@@ -27,13 +30,19 @@ public class OrganizationService : IOrganizationService
         IRepository<ProfessionalProfileDefinition> professionalProfileDefinitions,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        IRepository<ProjectMember>? projectMemberRepo = null,
+        IRepository<OrganizationMemberCapacityProfile>? capacityProfileRepo = null,
+        IRepository<TaskCompletionAttribution>? skillAttributionRepo = null)
     {
         _organizationRepo = organizationRepo;
         _organizationMemberRepo = organizationMemberRepo;
         _userRepo = userRepo;
         _moderatorAssignmentRepo = moderatorAssignmentRepo;
         _professionalProfileDefinitions = professionalProfileDefinitions;
+        _projectMemberRepo = projectMemberRepo;
+        _capacityProfileRepo = capacityProfileRepo;
+        _skillAttributionRepo = skillAttributionRepo;
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
@@ -47,6 +56,11 @@ public class OrganizationService : IOrganizationService
         if (organization == null)
         {
             return Result.NotFound<OrganizationDto>();
+        }
+
+        if (!organization.IsActive)
+        {
+            return Result.Forbidden<OrganizationDto>();
         }
 
         if (!await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct))
@@ -290,6 +304,11 @@ public class OrganizationService : IOrganizationService
             return Result.NotFound<IReadOnlyList<OrganizationMemberDto>>();
         }
 
+        if (!organization.IsActive)
+        {
+            return Result.Forbidden<IReadOnlyList<OrganizationMemberDto>>();
+        }
+
         if (!await CanAccessOrganizationAsync(organization.Id, organization.OwnerId, ct)
             && !await HasModeratorCapabilityAsync(organization.Id, ModeratorCapabilities.UsersView, ct))
         {
@@ -303,13 +322,114 @@ public class OrganizationService : IOrganizationService
             .OrderBy(item => item.User.FullName)
             .ToListAsync(ct);
 
+        var memberIds = members.Select(item => item.UserId).ToHashSet();
+        var canManage = await CanManageOrganizationAsync(organizationId, organization.OwnerId, ct);
+        var currentUserId = _currentUserService.UserId;
+
+        var projectMemberships = _projectMemberRepo == null
+            ? []
+            : await _projectMemberRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Project)
+            .Where(item =>
+                item.Project.OrganizationId == organizationId &&
+                !item.Project.IsDeleted &&
+                memberIds.Contains(item.UserId))
+            .OrderBy(item => item.Project.Name)
+            .ToListAsync(ct);
+
+        var visibleProjectIds = canManage
+            ? projectMemberships.Select(item => item.ProjectId).ToHashSet()
+            : projectMemberships
+                .Where(item => item.Project.OwnerId == currentUserId || item.UserId == currentUserId)
+                .Select(item => item.ProjectId)
+                .ToHashSet();
+
+        var capacityProfiles = _capacityProfileRepo == null
+            ? []
+            : await _capacityProfileRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.AvailabilityWindows)
+            .Where(item => item.OrganizationId == organizationId && memberIds.Contains(item.UserId))
+            .ToListAsync(ct);
+        var capacityByUserId = capacityProfiles.ToDictionary(item => item.UserId);
+
+        var skillRows = _skillAttributionRepo == null
+            ? []
+            : await _skillAttributionRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.TaskItem)
+                .ThenInclude(item => item.Project)
+            .Include(item => item.TaskItem.SkillRequirements)
+                .ThenInclude(item => item.OrganizationSkill)
+            .Where(item =>
+                memberIds.Contains(item.ContributorUserId) &&
+                item.Status == TaskCompletionAttribution.Confirmed &&
+                !item.TaskItem.IsDeleted &&
+                item.TaskItem.Project.OrganizationId == organizationId)
+            .ToListAsync(ct);
+        var skillsByUserId = skillRows
+            .SelectMany(attribution => attribution.TaskItem.SkillRequirements
+                .Where(requirement => requirement.OrganizationSkill.OrganizationId == organizationId)
+                .Select(requirement => new
+                {
+                    attribution.ContributorUserId,
+                    requirement.OrganizationSkill.Name
+                }))
+            .GroupBy(item => item.ContributorUserId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group.Select(item => item.Name)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+                    .ToList());
+
         var result = members
-            .Select(item => new OrganizationMemberDto(
-                item.UserId,
-                item.User.FullName,
-                item.User.Email,
-                item.Role,
-                item.JoinedAt))
+            .Select(item =>
+            {
+                var canSeePeopleData = canManage || item.UserId == currentUserId;
+                capacityByUserId.TryGetValue(item.UserId, out var capacity);
+                skillsByUserId.TryGetValue(item.UserId, out var skills);
+                var assignments = projectMemberships
+                    .Where(projectMember =>
+                        projectMember.UserId == item.UserId &&
+                        visibleProjectIds.Contains(projectMember.ProjectId))
+                    .Select(projectMember => new OrganizationProjectMembershipDto(
+                        projectMember.ProjectId,
+                        projectMember.Project.Name,
+                        projectMember.Project.Code,
+                        projectMember.Role))
+                    .ToList();
+
+                return new OrganizationMemberDto(
+                    item.UserId,
+                    item.User.FullName,
+                    item.User.Email,
+                    item.Role,
+                    item.JoinedAt,
+                    assignments,
+                    canSeePeopleData
+                        ? capacity?.WeeklyCapacityHours ?? OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours
+                        : null,
+                    canSeePeopleData ? capacity == null ? "assumed_default" : "declared" : null,
+                    canSeePeopleData ? capacity?.TimeZoneId ?? "Asia/Ho_Chi_Minh" : null,
+                    canSeePeopleData
+                        ? capacity?.AvailabilityWindows
+                            .OrderBy(window => window.StartsAt)
+                            .Select(window => new OrganizationMemberAvailabilityDto(
+                                window.Id,
+                                window.StartsAt,
+                                window.EndsAt,
+                                window.Kind,
+                                window.AvailableHours,
+                                window.RowVersion.Length == 0 ? null : Convert.ToBase64String(window.RowVersion)))
+                            .ToList() ?? []
+                        : null,
+                    canSeePeopleData && capacity?.RowVersion.Length > 0
+                        ? Convert.ToBase64String(capacity.RowVersion)
+                        : null,
+                    canSeePeopleData ? skills ?? [] : null);
+            })
             .ToList();
 
         return Result.Success<IReadOnlyList<OrganizationMemberDto>>(result);
