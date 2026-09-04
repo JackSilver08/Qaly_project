@@ -69,7 +69,32 @@ public class AuthServiceTests
         login.Error.Should().Be("Email hoặc mật khẩu không đúng.");
     }
 
-    private static AuthService CreateService(IRepository<User> users)
+    [Fact]
+    public async Task LoginSynchronizesAnExistingAccountWithTheConfiguredSeedPassword()
+    {
+        var users = new InMemoryRepository<User>();
+        var seedCredentials = new Mock<ISeedCredentialProvider>();
+        seedCredentials
+            .Setup(item => item.GetPassword("admin@qaly.dev"))
+            .Returns("ConfiguredSeed@123");
+        var service = CreateService(users, seedCredentials.Object);
+
+        await service.RegisterAsync(new RegisterDto(
+            "Demo Admin",
+            "admin@qaly.dev",
+            "PreviousSeed@123",
+            "PreviousSeed@123"));
+
+        var firstLogin = await service.LoginAsync(new LoginDto("admin@qaly.dev", "ConfiguredSeed@123"));
+        var secondLogin = await service.LoginAsync(new LoginDto("admin@qaly.dev", "ConfiguredSeed@123"));
+
+        firstLogin.IsSuccess.Should().BeTrue();
+        secondLogin.IsSuccess.Should().BeTrue("the synchronized hash must be persisted after the first login");
+    }
+
+    private static AuthService CreateService(
+        IRepository<User> users,
+        ISeedCredentialProvider? seedCredentialProvider = null)
     {
         var unitOfWork = new Mock<IUnitOfWork>();
         unitOfWork.Setup(item => item.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
@@ -84,8 +109,14 @@ public class AuthServiceTests
             .Returns(Task.CompletedTask);
 
         var sessionService = new Mock<ISessionService>();
+        seedCredentialProvider ??= Mock.Of<ISeedCredentialProvider>();
         
-        return new AuthService(users, unitOfWork.Object, audit.Object, sessionService.Object);
+        return new AuthService(
+            users,
+            unitOfWork.Object,
+            audit.Object,
+            sessionService.Object,
+            seedCredentialProvider);
     }
 
     private sealed class InMemoryRepository<T> : IRepository<T> where T : BaseEntity

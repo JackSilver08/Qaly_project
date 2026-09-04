@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.AddScoped<INotificationTargetResolver, NotificationTargetResolver>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
+        services.AddSingleton<ISeedCredentialProvider, ConfigurationSeedCredentialProvider>();
         services.AddScoped<IAiExportService, AiExportService>();
         services.AddScoped<ISessionService, RedisSessionService>();
         services.AddScoped<IWebhookPublisher, WebhookPublisher>();

@@ -5,3 +5,9 @@ export interface ShellNavItem {
   to: string
   icon: Component
 }
+
+export interface SimulationUser {
+  id: string
+  fullName: string
+  role: string
+}

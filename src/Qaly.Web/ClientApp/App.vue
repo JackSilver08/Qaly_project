@@ -1398,6 +1398,7 @@ provide(dashboardContextKey, {
   <AppShell
     :nav-items="navigation"
     :notification-count="notificationCount"
+    :notifications-open="notificationsOpen"
     :user-name="currentUser?.fullName || currentUser?.email || 'Qaly user'"
     :user-initials="
       initials(currentUser?.fullName || currentUser?.email || 'QU')
@@ -1518,7 +1519,10 @@ provide(dashboardContextKey, {
 
     <div
       v-if="notificationsOpen"
+      id="notification-panel"
       class="notification-popover glass-card home-notification-popover"
+      role="region"
+      aria-label="Danh sách thông báo"
     >
       <div class="panel-heading">
         <div>

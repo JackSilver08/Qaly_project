@@ -3,12 +3,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SidebarNav from './SidebarNav.vue'
 import TopHeader from './TopHeader.vue'
-import SimulationHeaderBanner from './SimulationHeaderBanner.vue'
-import type { ShellNavItem } from './shell-models'
+import type { ShellNavItem, SimulationUser } from './shell-models'
 
 defineProps<{
   navItems: ShellNavItem[]
   notificationCount: number
+  notificationsOpen: boolean
   userName: string
   userInitials: string
   userRole: string | null
@@ -17,7 +17,7 @@ defineProps<{
   canAccessArchivedProjects: boolean
   canAccessSettings: boolean
   canStartSimulation: boolean
-  simulationUsers: Array<{ id: string; fullName: string; role: string }>
+  simulationUsers: SimulationUser[]
 }>()
 
 const emit = defineEmits<{
@@ -68,12 +68,14 @@ onBeforeUnmount(() => {
 <template>
   <!-- Shared shell adapts the old UI structure: full top header, left nav, single scrolling content panel. -->
   <div class="app-shell" :class="{ 'is-chat-shell': isChatShell }">
-    <SimulationHeaderBanner :can-start="canStartSimulation" :users="simulationUsers" />
     <TopHeader
       brand-name="QALY"
       :notification-count="notificationCount"
+      :notifications-open="notificationsOpen"
       :user-name="userName"
       :user-initials="userInitials"
+      :can-start-simulation="canStartSimulation"
+      :simulation-users="simulationUsers"
       @toggle-sidebar="sidebarOpen = !sidebarOpen"
       @notifications="$emit('notifications')"
       @assistant="$emit('assistant')"

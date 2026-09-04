@@ -18,17 +18,20 @@ public class AuthService : IAuthService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuditLogService _auditLogService;
     private readonly ISessionService _sessionService;
+    private readonly ISeedCredentialProvider _seedCredentialProvider;
 
     public AuthService(
         IRepository<User> userRepo,
         IUnitOfWork unitOfWork,
         IAuditLogService auditLogService,
-        ISessionService sessionService)
+        ISessionService sessionService,
+        ISeedCredentialProvider seedCredentialProvider)
     {
         _userRepo = userRepo;
         _unitOfWork = unitOfWork;
         _auditLogService = auditLogService;
         _sessionService = sessionService;
+        _seedCredentialProvider = seedCredentialProvider;
     }
 
     public async Task<Result<UserDto>> RegisterAsync(RegisterDto dto, CancellationToken ct = default)
@@ -192,7 +195,7 @@ public class AuthService : IAuthService
 
     private async Task<bool> TrySynchronizeSeedPasswordAsync(User user, string email, string password, CancellationToken ct)
     {
-        var seedPassword = GetSeedPassword(email);
+        var seedPassword = _seedCredentialProvider.GetPassword(email);
         if (string.IsNullOrWhiteSpace(seedPassword) || !string.Equals(password, seedPassword, StringComparison.Ordinal))
         {
             return false;
@@ -202,40 +205,6 @@ public class AuthService : IAuthService
         await _userRepo.UpdateAsync(user, ct);
         await _unitOfWork.SaveChangesAsync(ct);
         return true;
-    }
-
-    private static string? GetSeedPassword(string email)
-    {
-        return email switch
-        {
-            "admin@qaly.dev" => ReadSeedSecret("QALY_SEED_ADMIN_PASSWORD"),
-            "nguyenvana@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "tranthib@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "levancuong@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "phamminhduc@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "hoangthuha@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "danghonglien@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "vuquanghuy@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "buituyetmai@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            "ngogiabao@qaly.dev" => ReadSeedSecret("QALY_SEED_DEFAULT_USER_PASSWORD"),
-            _ => null
-        };
-    }
-
-    private static string? ReadSeedSecret(string environmentVariable)
-    {
-        var value = Environment.GetEnvironmentVariable(environmentVariable);
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        return environmentVariable switch
-        {
-            "QALY_SEED_ADMIN_PASSWORD" => "Qaly@Dev2026!",
-            "QALY_SEED_DEFAULT_USER_PASSWORD" => "Qaly@User2026!",
-            _ => null
-        };
     }
 
     private static string HashPassword(string password)
