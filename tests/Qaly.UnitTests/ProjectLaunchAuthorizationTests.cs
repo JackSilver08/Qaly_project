@@ -13,6 +13,17 @@ namespace Qaly.UnitTests;
 
 public sealed class ProjectLaunchAuthorizationTests
 {
+    [Theory]
+    [InlineData(
+        "Khởi chạy Project Qaly Next trong 2 tuần, gồm frontend, backend, kiểm thử và triển khai.",
+        "Qaly Next")]
+    [InlineData("Khởi chạy Project `Qaly SPA Services` cho khách hàng.", "Qaly SPA Services")]
+    [InlineData("Khởi chạy dự án tên Qaly Mobile với ba chức năng chính.", "Qaly Mobile")]
+    public void InferProjectName_SupportsDemoPromptForms(string prompt, string expected)
+    {
+        ProjectLaunchService.InferProjectName(prompt).Should().Be(expected);
+    }
+
     [Fact]
     public async Task AnalyzeAsync_WithoutOrganizationScope_DoesNotFallBackToAnotherTenant()
     {

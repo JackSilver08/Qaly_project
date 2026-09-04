@@ -94,6 +94,35 @@ public sealed class RichDemoSeedTests
             item.UserId == readOnlyMember.Id &&
             item.Role == "Viewer"))
             .Should().BeTrue();
+
+        // A previously-created demo database can predate the expanded project-role matrix.
+        // Re-running the seed must repair those canonical memberships without a destructive reseed.
+        var staleDeveloper = await db.ProjectMembers.SingleAsync(item =>
+            item.ProjectId == demoProject.Id && item.User.Email == "linh.chi@qaly.dev");
+        staleDeveloper.Role = "Member";
+        var missingCustomer = await db.ProjectMembers.SingleAsync(item =>
+            item.ProjectId == demoProject.Id && item.User.Email == "viet.long@qaly.dev");
+        db.ProjectMembers.Remove(missingCustomer);
+        await db.SaveChangesAsync();
+
+        await seeder.SeedAsync();
+
+        var repairedRoles = await db.ProjectMembers
+            .Where(item => item.ProjectId == demoProject.Id)
+            .ToDictionaryAsync(item => item.User.Email, item => item.Role);
+        repairedRoles.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["admin@qaly.dev"] = "Owner",
+            ["minh.anh@qaly.dev"] = "Manager",
+            ["bao.ngoc@qaly.dev"] = "ScrumMaster",
+            ["linh.chi@qaly.dev"] = "Developer",
+            ["quoc.huy@qaly.dev"] = "Developer",
+            ["tuan.kiet@qaly.dev"] = "Tester",
+            ["thanh.tam@qaly.dev"] = "Reviewer",
+            ["mai.phuong@qaly.dev"] = "Member",
+            ["yen.nhi@qaly.dev"] = "Viewer",
+            ["viet.long@qaly.dev"] = "Customer"
+        });
     }
 
     [Fact]

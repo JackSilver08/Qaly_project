@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Domain.Entities.GitHub;
 
@@ -8,11 +9,21 @@ public partial class DataSeeder
 {
     private const string PresentationProjectCode = "qaly-workos-demo";
     private const string PresentationProjectName = "Qaly Release 4.0";
-    private static readonly string[] PresentationMemberEmails =
+    private static readonly (string Email, string Role)[] PresentationProjectMembers =
     [
-        "admin@qaly.dev", "minh.anh@qaly.dev", "bao.ngoc@qaly.dev",
-        "linh.chi@qaly.dev", "tuan.kiet@qaly.dev", "yen.nhi@qaly.dev"
+        ("admin@qaly.dev", "Owner"),
+        ("minh.anh@qaly.dev", "Manager"),
+        ("bao.ngoc@qaly.dev", "ScrumMaster"),
+        ("linh.chi@qaly.dev", "Developer"),
+        ("quoc.huy@qaly.dev", "Developer"),
+        ("tuan.kiet@qaly.dev", "Tester"),
+        ("thanh.tam@qaly.dev", "Reviewer"),
+        ("mai.phuong@qaly.dev", "Member"),
+        ("yen.nhi@qaly.dev", "Viewer"),
+        ("viet.long@qaly.dev", "Customer")
     ];
+    private static readonly string[] PresentationMemberEmails =
+        PresentationProjectMembers.Select(item => item.Email).ToArray();
 
     /// <summary>
     /// Enriches an existing rich-demo database with the exact, repeatable data used by
@@ -46,6 +57,8 @@ public partial class DataSeeder
         {
             return changed;
         }
+
+        changed |= await EnsurePresentationProjectMembersAsync(project, users, now);
 
         var sprints = await _context.Set<Sprint>()
             .Where(item => item.ProjectId == project.Id)
@@ -179,6 +192,63 @@ public partial class DataSeeder
 
         await _context.SaveChangesAsync();
         changed |= await EnsurePresentationGitHubSeedAsync(project, organizationId, admin, now);
+        return changed;
+    }
+
+    private async Task<bool> EnsurePresentationProjectMembersAsync(
+        Project project,
+        Dictionary<string, User> users,
+        DateTimeOffset now)
+    {
+        var existingMembers = await _context.ProjectMembers
+            .Where(item => item.ProjectId == project.Id)
+            .ToDictionaryAsync(item => item.UserId);
+        var changed = false;
+
+        foreach (var definition in PresentationProjectMembers)
+        {
+            if (!users.TryGetValue(definition.Email, out var user))
+            {
+                continue;
+            }
+
+            var canManage = ProjectRoleRules.CanManageProject(definition.Role);
+            if (!existingMembers.TryGetValue(user.Id, out var member))
+            {
+                member = new ProjectMember
+                {
+                    ProjectId = project.Id,
+                    UserId = user.Id,
+                    Role = definition.Role,
+                    JoinedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10),
+                    CreatedAt = project.StartDate?.AddDays(1) ?? now.AddDays(-10),
+                    CanViewProjectTimeline = canManage,
+                    CanViewTaskRisk = canManage,
+                    CanNudgeAssignee = canManage,
+                    CanViewUnseenTaskSignal = canManage
+                };
+                await _context.ProjectMembers.AddAsync(member);
+                existingMembers[user.Id] = member;
+                changed = true;
+                continue;
+            }
+
+            if (!string.Equals(member.Role, definition.Role, StringComparison.Ordinal) ||
+                member.CanViewProjectTimeline != canManage ||
+                member.CanViewTaskRisk != canManage ||
+                member.CanNudgeAssignee != canManage ||
+                member.CanViewUnseenTaskSignal != canManage)
+            {
+                member.Role = definition.Role;
+                member.CanViewProjectTimeline = canManage;
+                member.CanViewTaskRisk = canManage;
+                member.CanNudgeAssignee = canManage;
+                member.CanViewUnseenTaskSignal = canManage;
+                member.UpdatedAt = now;
+                changed = true;
+            }
+        }
+
         return changed;
     }
 

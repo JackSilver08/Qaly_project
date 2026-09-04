@@ -840,13 +840,19 @@ public sealed class ProjectLaunchService : IProjectLaunchService
         };
     }
 
-    private static string? InferProjectName(string text)
+    internal static string? InferProjectName(string text)
     {
         var quoted = Regex.Match(
             text,
             "\\bProject\\s*[`'\\\"“](?<name>[^`'\\\"”]{2,120})[`'\\\"”]",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (quoted.Success) return quoted.Groups["name"].Value.Trim();
+
+        var unquotedProject = Regex.Match(
+            text,
+            @"\bProject\s+(?<name>[\p{L}\p{N}][\p{L}\p{N}\s._-]{1,100}?)(?:[,.;]|\s+(?:cho|với|voi|trong|gồm|gom)\b|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (unquotedProject.Success) return unquotedProject.Groups["name"].Value.Trim();
 
         var named = Regex.Match(
             text,

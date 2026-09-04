@@ -1148,6 +1148,10 @@ const assistantSessionVersion = ref(0)
 const assistantSessionProjectId = ref<string | null>(null)
 const assistantSessionLoading = ref(false)
 const assistantSessionLoadAttempted = ref(false)
+// A user can create a new conversation while the initial "recent session" request is
+// still in flight. Keep a generation number so that late restore responses cannot
+// replace the newly selected session and pair an old prompt with a new answer.
+let assistantSessionGeneration = 0
 
 // Slash commands predefined popup list (Sprint 1)
 const slashCommands = [
@@ -1454,6 +1458,7 @@ function handleMessageMenu(key: string, msg: ChatEntry) {
 }
 
 async function startNewConversation() {
+  const generation = ++assistantSessionGeneration
   chatHistory.value = [buildWelcomeMessage()]
   selectedDrawerMessage.value = null
   closeCockpitDrawer()
@@ -1462,7 +1467,7 @@ async function startNewConversation() {
   assistantSessionProjectId.value = null
   assistantSessionLoadAttempted.value = true
   try {
-    await createAssistantSession()
+    await createAssistantSession(generation)
     await loadConversationHistory()
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Không thể tạo phiên Trợ lý AI mới.')
@@ -1946,7 +1951,7 @@ function applyAssistantSessionScopeMetadata(session: AiAssistantSession) {
   progressiveDraft.value = session.clarificationDraft ?? progressiveDraft.value
 }
 
-async function createAssistantSession() {
+async function createAssistantSession(generation = assistantSessionGeneration) {
   const context = assistantContextForCurrentRoute()
   const session = await apiJson<AiAssistantSession>('/api/ai/assistant/sessions', {
     method: 'POST',
@@ -1955,12 +1960,13 @@ async function createAssistantSession() {
       title: `Cuộc trò chuyện Trợ lý AI · ${selectedTargetLabel.value}`
     })
   })
-  applyAssistantSession(session)
+  if (generation === assistantSessionGeneration) applyAssistantSession(session)
   return session
 }
 
 async function restoreAssistantSession() {
   if (assistantSessionLoading.value) return
+  const generation = assistantSessionGeneration
   assistantSessionLoading.value = true
   try {
     let session: AiAssistantSession | null = null
@@ -1969,16 +1975,21 @@ async function restoreAssistantSession() {
       try {
         session = await apiJson<AiAssistantSession>(`/api/ai/assistant/sessions/${preferredSessionId}`)
       } catch {
-        window.localStorage.removeItem(AI_ACTIVE_SESSION_STORAGE_KEY)
+        if (generation === assistantSessionGeneration) {
+          window.localStorage.removeItem(AI_ACTIVE_SESSION_STORAGE_KEY)
+        }
       }
     }
     if (!session) session = await apiJson<AiAssistantSession | null>('/api/ai/assistant/sessions/recent')
+    if (generation !== assistantSessionGeneration) return
     if (session) applyAssistantSession(session)
-    else await createAssistantSession()
+    else await createAssistantSession(generation)
   } catch (error) {
-    showError(error instanceof Error
-      ? `Không thể khôi phục cuộc trò chuyện: ${error.message}`
-      : 'Không thể khôi phục cuộc trò chuyện từ máy chủ.')
+    if (generation === assistantSessionGeneration) {
+      showError(error instanceof Error
+        ? `Không thể khôi phục cuộc trò chuyện: ${error.message}`
+        : 'Không thể khôi phục cuộc trò chuyện từ máy chủ.')
+    }
   } finally {
     assistantSessionLoadAttempted.value = true
     assistantSessionLoading.value = false

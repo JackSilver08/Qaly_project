@@ -15,6 +15,12 @@
     "test:unit:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:basic": "playwright test tests/e2e/basic-seed-navigation.spec.ts",
+    "test:e2e:demo:local": "playwright test tests/e2e/demo-script-30-minutes.spec.ts --workers=1",
+    "test:e2e:demo:local:headed": "playwright test tests/e2e/demo-script-30-minutes.spec.ts --workers=1 --headed",
+    "test:e2e:demo:database": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-demo-database.ps1",
+    "test:e2e:demo:database:headed": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-demo-database.ps1 -Headed",
+    "test:e2e:demo:real": "playwright test --config=playwright.demo.config.ts",
+    "test:e2e:demo:headed": "playwright test --config=playwright.demo.config.ts --headed",
     "test:browser-console": "playwright test tests/e2e/browser-console.spec.ts"
   },
   "devDependencies": {
