@@ -209,7 +209,9 @@ function suggestionOutput() {
       {
         skillId: frontendSkillId,
         canonicalName: 'Vue.js',
-        requiredLevel: 'Proficient',
+        // Keep the literal type so ReturnType<typeof suggestionOutput> still carries the
+        // Requirement['requiredLevel'] union instead of a widened string.
+        requiredLevel: 'Proficient' as const,
         confidence: 0.91,
         rationale: 'Task yêu cầu xây dựng component Vue ở đúng ngữ cảnh.',
         sourceRefs: [`task:${taskId}`],
@@ -217,7 +219,7 @@ function suggestionOutput() {
       {
         skillId: backendSkillId,
         canonicalName: 'ASP.NET Core',
-        requiredLevel: 'Expert',
+        requiredLevel: 'Expert' as const,
         confidence: 0.86,
         rationale: 'Task yêu cầu API backend có authorization.',
         sourceRefs: [`task:${taskId}`],

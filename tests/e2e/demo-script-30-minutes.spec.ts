@@ -1,4 +1,7 @@
-import { expect, test, type APIResponse, type Locator, type Page, type TestInfo } from '@playwright/test'
+// `page.waitForResponse` resolves with a network Response (which carries `.request()`),
+// not the APIResponse returned by `page.request.*`. Alias it so the DOM `Response` global
+// stays available to the in-browser `page.evaluate` callbacks below.
+import { expect, test, type Locator, type Page, type Response as NetworkResponse, type TestInfo } from '@playwright/test'
 import { openSeededProject } from './support/seeded-project'
 
 test.describe.configure({ mode: 'serial' })
@@ -150,7 +153,7 @@ function waitForAssistantTurn(page: Page) {
   }, { timeout: 240_000 })
 }
 
-async function expectAssistantTurnPersisted(page: Page, response: APIResponse, prompt: string) {
+async function expectAssistantTurnPersisted(page: Page, response: NetworkResponse, prompt: string) {
   expect(response.ok(), 'API Assistant phải hoàn tất lượt hiện tại').toBeTruthy()
   const request = response.request().postDataJSON() as { message?: string }
   expect(request.message, 'Request phải gửi đúng prompt đang hiển thị').toBe(prompt)

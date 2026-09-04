@@ -24,7 +24,7 @@ export async function openAssistantDisclosures(
   await dialog.locator(selector).evaluateAll(items => {
     for (const item of items) {
       const details = item as HTMLDetailsElement
-      if (!details.open) details.querySelector(':scope > summary')?.click()
+      if (!details.open) details.querySelector<HTMLElement>(':scope > summary')?.click()
     }
   })
 }

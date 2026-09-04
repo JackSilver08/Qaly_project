@@ -1,0 +1,20 @@
+{
+  // Playwright specs run in Node (process, Buffer) but also carry browser code inside
+  // page.evaluate callbacks, so they need both the node types and the DOM lib. The root
+  // tsconfig only covers src/**, which left this directory on the editor's inferred
+  // config and reported `process`/`Buffer` as undefined.
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["e2e/**/*.ts"]
+}
