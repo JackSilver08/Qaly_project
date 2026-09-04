@@ -195,7 +195,7 @@ onBeforeUnmount(() => { pollToken++ })
         >
           <RefreshCw v-if="aiData" :size="18" />
           <BrainCircuit v-else :size="18" />
-          {{ aiData ? 'Phân tích lại' : 'Tạo phân tích AI' }}
+          {{ aiData ? 'Phân tích lại' : 'Tạo phân tích' }}
         </button>
       </div>
     </div>
@@ -264,7 +264,7 @@ onBeforeUnmount(() => { pollToken++ })
           <div class="ai-empty-icon">
             <BrainCircuit :size="48" style="color: rgba(15, 82, 186, 0.3);" />
           </div>
-          <p v-if="selectedOrganizationId">Nhấn <strong>Tạo phân tích AI</strong> để nhận nhận định có metric/source grounding và có thể đọc lại sau reload.</p>
+          <p v-if="selectedOrganizationId">Nhấn <strong>Tạo phân tích</strong> để nhận nhận định có metric/source grounding và có thể đọc lại sau reload.</p>
           <p v-else>Chưa có phạm vi tổ chức/dự án hợp lệ để tạo strategic brief.</p>
         </div>
 
@@ -372,8 +372,10 @@ onBeforeUnmount(() => { pollToken++ })
 }
 
 .ai-button {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   background: linear-gradient(135deg, #1f80ff, #0f52ba);
   color: white;
@@ -382,8 +384,9 @@ onBeforeUnmount(() => { pollToken++ })
   border-radius: var(--qaly-radius-lg);
   font-weight: 600;
   font-size: 14px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
   box-shadow: var(--qaly-shadow-md);
 }
 
