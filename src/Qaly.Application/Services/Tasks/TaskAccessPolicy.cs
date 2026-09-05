@@ -160,6 +160,30 @@ public sealed class TaskAccessPolicy : ITaskAccessPolicy
             task.Assignees.Any(assignment => assignment.UserId == currentUserId);
     }
 
+    public async Task<bool> CanReviewTaskAsync(TaskItem task, CancellationToken ct)
+    {
+        var actorId = CurrentUserId;
+        if (actorId == null || task.Project == null || !await CanContributeToTaskAsync(task, ct))
+            return false;
+
+        if (await CanManageProjectAsync(task.ProjectId, task.Project.OwnerId, ct))
+            return true;
+
+        // An assignee cannot approve their own work by also being its reviewer.
+        if (task.AssigneeId == actorId || task.Assignees.Any(assignment => assignment.UserId == actorId))
+            return false;
+
+        if (task.ReviewerId == actorId) return true;
+
+        var role = await _memberRepo.GetQueryable()
+            .Where(member => member.ProjectId == task.ProjectId && member.UserId == actorId)
+            .Select(member => member.Role)
+            .FirstOrDefaultAsync(ct);
+        var baseRole = await ResolveBaseRoleAsync(task.ProjectId, role, ct);
+        return baseRole != null && ProjectPermissionRules.Resolve(
+            baseRole, isOwner: false, isSystemAdmin: false).CanReviewEvidence;
+    }
+
     public async Task<bool> CanContributeToTaskAsync(TaskItem task, CancellationToken ct)
     {
         var currentUserId = CurrentUserId;

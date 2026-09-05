@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Qaly.Application.DTOs.Project;
+using Qaly.Application.Services;
 using Qaly.Domain.Entities;
 using Qaly.Infrastructure.Data;
 using Qaly.Web.Controllers;
@@ -16,6 +18,37 @@ public class OrganizationServiceIntegrationTests : IClassFixture<IntegrationTest
     public OrganizationServiceIntegrationTests(IntegrationTestFactory factory)
     {
         _factory = factory;
+    }
+
+    [Fact]
+    public async Task AddMember_CreatesARealDefaultCapacityProfile()
+    {
+        var ownerId = Guid.NewGuid();
+        var memberId = Guid.NewGuid();
+        var organizationId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.Users.AddRange(
+                new User { Id = ownerId, FullName = "Owner", Email = $"owner-{Guid.NewGuid():N}@qaly.dev", IsActive = true },
+                new User { Id = memberId, FullName = "New Member", Email = $"member-{Guid.NewGuid():N}@qaly.dev", IsActive = true });
+            db.Organizations.Add(new Organization { Id = organizationId, Name = "Capacity Org", Code = $"capacity-{Guid.NewGuid():N}", OwnerId = ownerId, IsActive = true });
+            db.OrganizationMembers.Add(new OrganizationMember { OrganizationId = organizationId, UserId = ownerId, Role = OrganizationRoleRules.Owner });
+            await db.SaveChangesAsync();
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-UserId", ownerId.ToString());
+        var response = await SendWithCsrfAsync(client, HttpMethod.Post,
+            $"/api/organizations/{organizationId}/members", new AddOrganizationMemberRequest(memberId, OrganizationRoleRules.Member));
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var profile = await verifyDb.OrganizationMemberCapacityProfiles
+            .SingleAsync(item => item.OrganizationId == organizationId && item.UserId == memberId);
+        profile.WeeklyCapacityHours.Should().Be(OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours);
+        profile.TimeZoneId.Should().Be("Asia/Ho_Chi_Minh");
     }
 
     [Fact]

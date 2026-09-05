@@ -76,7 +76,8 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             projectId = await ResolveMeetingProjectIdAsync(meetingEntityId, ct);
         }
         if (string.Equals(request.Context?.EntityType, "group", StringComparison.OrdinalIgnoreCase) &&
-            request.Context?.EntityId is Guid discoveredGroupId)
+            request.Context?.EntityId is Guid discoveredGroupId &&
+            UsesGroupScope(request, projectId, requestedCapabilityId ?? AiAssistantCapabilityIntentClassifier.Infer(request.Message, request.History)))
         {
             var group = await _db.WorkGroups.AsNoTracking().Include(item => item.Members)
                 .SingleOrDefaultAsync(item => item.Id == discoveredGroupId && !item.IsDeleted, ct);
@@ -861,6 +862,7 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             .Select(item => new
             {
                 item.AssigneeId,
+                AssigneeIds = item.Assignees.Select(assignment => assignment.UserId).ToArray(),
                 item.Status,
                 item.EstimatedHours,
                 item.ActualHours,
@@ -874,7 +876,8 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
             .ToListAsync(ct);
         var workload = members.Select(member =>
         {
-            var assigned = visibleTasks.Where(task => task.AssigneeId == member.UserId).ToList();
+            var assigned = visibleTasks.Where(task =>
+                task.AssigneeId == member.UserId || task.AssigneeIds.Contains(member.UserId)).ToList();
             return new
             {
                 member.UserId,
@@ -1197,12 +1200,16 @@ public sealed class AiAssistantContextRegistry : IAiAssistantContextRegistry
 
     private static bool IsExplicitGroupReadRequest(string message)
     {
-        var hasGroupTarget = message.Contains("group", StringComparison.OrdinalIgnoreCase) ||
-                             message.Contains("nhóm", StringComparison.OrdinalIgnoreCase);
-        var hasProjectTarget = message.Contains("project", StringComparison.OrdinalIgnoreCase) ||
-                               message.Contains("dự án", StringComparison.OrdinalIgnoreCase);
+        var normalized = AiPromptLanguage.Normalize(message);
+        var hasGroupTarget = AiPromptLanguage.ContainsAny(normalized, "group", "nhom");
+        var hasProjectTarget = AiPromptLanguage.ContainsAny(normalized, "project", "du an");
         return hasGroupTarget && !hasProjectTarget;
     }
+
+    private static bool UsesGroupScope(AiAssistantTurnRequestDto request, Guid? projectId, string capabilityId)
+        => capabilityId == AiAssistantContextContract.GroupPollCapability ||
+           ((capabilityId is AiAssistantContextContract.GroundedReadCapability or AiAssistantContextContract.ResearchPlanCapability) &&
+            (!projectId.HasValue || IsExplicitGroupReadRequest(request.Message)));
 
     private static List<string> SelectProjectSources(
         string capabilityId,

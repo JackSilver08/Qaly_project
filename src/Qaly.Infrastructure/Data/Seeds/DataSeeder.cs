@@ -96,6 +96,7 @@ public partial class DataSeeder
         }
 
         await EnsureProjectMemberOrganizationConsistencyAsync();
+        await EnsureOrganizationMemberCapacityConsistencyAsync();
     }
 
     private async Task SeedGroupsDemoAsync()
@@ -812,11 +813,57 @@ public partial class DataSeeder
         return orphanedMemberships.Count;
     }
 
+    /// <summary>
+    /// Backfills the capacity invariant introduced after organization membership. This only adds
+    /// missing rows and never overwrites a user's declared hours or availability windows.
+    /// </summary>
+    private async Task<int> EnsureOrganizationMemberCapacityConsistencyAsync()
+    {
+        var memberKeys = await _context.OrganizationMembers
+            .Where(member => member.Organization.IsActive && member.User.IsActive)
+            .Select(member => new { member.OrganizationId, member.UserId })
+            .Union(_context.Organizations
+                .Where(organization => organization.IsActive && organization.Owner.IsActive)
+                .Select(organization => new { OrganizationId = organization.Id, UserId = organization.OwnerId }))
+            .Distinct()
+            .ToListAsync();
+
+        var existingKeys = await _context.OrganizationMemberCapacityProfiles
+            .Select(profile => new { profile.OrganizationId, profile.UserId })
+            .ToListAsync();
+        var existing = existingKeys
+            .Select(item => (item.OrganizationId, item.UserId))
+            .ToHashSet();
+        var missing = memberKeys
+            .Where(item => !existing.Contains((item.OrganizationId, item.UserId)))
+            .ToList();
+
+        if (missing.Count == 0)
+        {
+            return 0;
+        }
+
+        await _context.OrganizationMemberCapacityProfiles.AddRangeAsync(missing.Select(item =>
+            new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = item.OrganizationId,
+                UserId = item.UserId,
+                WeeklyCapacityHours = OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            }));
+        await _context.SaveChangesAsync();
+        LogRepairedCapacityProfiles(_logger, missing.Count);
+        return missing.Count;
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Cơ sở dữ liệu đã migrate thành công.")]
     private static partial void LogDatabaseMigrated(ILogger logger);
 
     [LoggerMessage(EventId = 7, Level = LogLevel.Information, Message = "Đã bổ sung {Count} thành viên tổ chức bị thiếu cho các dự án thuộc tổ chức.")]
     private static partial void LogRepairedOrganizationMemberships(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 8, Level = LogLevel.Information, Message = "Đã tạo capacity mặc định 40h/tuần cho {Count} thành viên tổ chức chưa có profile.")]
+    private static partial void LogRepairedCapacityProfiles(ILogger logger, int count);
 
     [LoggerMessage(EventId = 2, Level = LogLevel.Information, Message = "Dữ liệu mẫu đã được tạo thành công.")]
     private static partial void LogSeedDataCreated(ILogger logger);

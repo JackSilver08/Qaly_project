@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using System.Text.Json;
 using Qaly.Application.DTOs.Ai;
 
@@ -152,8 +150,7 @@ public static class AiAssistantGoalPlanningOutputContract
                 AiAssistantContextContract.ResearchPlanCapability &&
             available.TryGetValue(serverInferredCapabilityId, out var serverReadDescriptor) &&
             (selected == null ||
-             available.TryGetValue(selected.SkillId, out var selectedDescriptor) &&
-             selectedDescriptor.RiskClass.EndsWith("_mutation", StringComparison.Ordinal)))
+             IsServerOwnedActionCapability(selected.SkillId)))
         {
             selected = ToSelection(
                 serverReadDescriptor,
@@ -164,6 +161,14 @@ public static class AiAssistantGoalPlanningOutputContract
 
         var knownButDenied = envelope.RankedSkills.FirstOrDefault(item =>
             AiAssistantCapabilityCatalog.TryGet(item.SkillId, out _) && !available.ContainsKey(item.SkillId));
+        // Losing permission for the intended action must not select a different available
+        // action just because the model ranked it. The same applies to unavailable readers.
+        var intendedId = context.RequestedCapabilityId ?? serverInferredCapabilityId;
+        if (!available.ContainsKey(intendedId) && AiAssistantCapabilityCatalog.TryGet(intendedId, out _))
+        {
+            selected = null;
+            knownButDenied = new AiAssistantSkillCandidateDto(intendedId, "Requested capability is not authorized.", 1);
+        }
         var missing = envelope.MissingSkills
             .Where(item => !available.ContainsKey(item.SkillId))
             .GroupBy(item => item.SkillId, StringComparer.Ordinal)
@@ -252,59 +257,19 @@ public static class AiAssistantGoalPlanningOutputContract
             return controlledPlan;
 
         var message = request.Message.Trim();
-        var normalized = Normalize(message);
         var inferredCapabilityId = AiAssistantCapabilityIntentClassifier.Infer(message, request.History);
         var available = discoveryContext.Capabilities.ToDictionary(item => item.CapabilityId, StringComparer.Ordinal);
         var missing = new List<AiAssistantMissingSkillDto>();
         string? selectedId = null;
 
-        if (ContainsAny(normalized, "test demo", "demo tat ca", "chay test", "test cand", "kiem thu tat ca") &&
-            available.ContainsKey(AiAssistantContextContract.SafeTestRunCapability))
-        {
-            selectedId = AiAssistantContextContract.SafeTestRunCapability;
-        }
-        else if (ContainsAny(normalized, "test demo", "demo tat ca", "chay test", "test cand", "kiem thu tat ca"))
-        {
-            missing.Add(new AiAssistantMissingSkillDto(
-                "demo.test.run.v1", "Chạy bộ test/demo", "Qaly chưa expose test runner như một skill an toàn cho trợ lý.",
-                "Thiết kế một adapter test allowlist, sandbox và report read-only riêng."));
-        }
-        else if (AiAssistantCapabilityIntentClassifier.IsCapabilityOverviewQuery(message) &&
-                 available.ContainsKey(AiAssistantContextContract.GroundedReadCapability))
-        {
-            selectedId = AiAssistantContextContract.GroundedReadCapability;
-        }
-        else if (inferredCapabilityId == AiAssistantContextContract.TaskCreateCapability &&
-                 available.ContainsKey(AiAssistantContextContract.TaskCreateCapability))
-        {
-            // Do not let a project-purpose clause inside an explicit task request fall through
-            // to the broader Project Launch keyword set below.
-            selectedId = AiAssistantContextContract.TaskCreateCapability;
-        }
-        else if (AiNativeDomainActionContract.CapabilityIds.Contains(inferredCapabilityId) &&
-                 available.ContainsKey(inferredCapabilityId))
-        {
-            selectedId = inferredCapabilityId;
-        }
-        else if ((ContainsAny(
-                     normalized,
-                     "tao du an", "tao mot du an", "lap du an", "tao project", "tao mot project",
-                     "khoi chay du an", "khoi tao du an", "launch project", "tu dong tao project",
-                     "tu dong tao", "plan 18", "18_native", "chi dinh manager", "member", "phan bo", "giao viec",
-                     "thu nghiem luon", "thu nghiem", "thu luon", "chay luon", "trien khai luon", "bat dau luon") ||
-                     inferredCapabilityId == AiAssistantContextContract.ProjectLaunchCapability) &&
-                 available.ContainsKey(AiAssistantContextContract.ProjectLaunchCapability))
-        {
-            selectedId = AiAssistantContextContract.ProjectLaunchCapability;
-        }
-        else if (ContainsAny(
-                     normalized,
-                     "tao du an", "tao mot du an", "lap du an", "tao project", "tao mot project",
-                     "tao group", "tao mot group", "tao nhom", "tao mot nhom",
-                     "tao cuoc hop", "tao mot cuoc hop", "tao meeting", "tao poll", "tao form", "tao lich"))
+        // The fallback uses the same intent decision as the model-backed path. A second
+        // broad keyword router here used to resurrect actions explicitly negated by users.
+        if (string.IsNullOrWhiteSpace(request.RequestedCapabilityId) &&
+            inferredCapabilityId == AiAssistantContextContract.GroundedReadCapability &&
+            AiAssistantCapabilityIntentClassifier.TryGetUnsupportedAction(message, out var unsupportedAction))
         {
             missing.Add(new AiAssistantMissingSkillDto(
-                "domain.object.draft.v1", "Soạn đối tượng Qaly", "Chưa có draft adapter tương ứng cho loại đối tượng được yêu cầu.",
+                "domain.object.draft.v1", unsupportedAction, "Chưa có draft adapter tương ứng cho loại đối tượng được yêu cầu.",
                 "Bổ sung capability-specific schema, review renderer và confirm endpoint."));
         }
         else
@@ -542,20 +507,7 @@ public static class AiAssistantGoalPlanningOutputContract
 
     private static bool TryDetectKnownMissingSkill(string message, out AiAssistantMissingSkillDto missingSkill)
     {
-        var normalized = Normalize(message);
-        var mentionsCandidate = normalized.Contains("cand", StringComparison.Ordinal) ||
-                                normalized.Contains("candidate", StringComparison.Ordinal);
-        var requestsTestExecution = ContainsAny(
-            normalized,
-            "chay test",
-            "chay tu dong",
-            "test demo",
-            "test cac",
-            "test tat ca",
-            "kiem thu tat ca",
-            "run test",
-            "run all test");
-        if (mentionsCandidate && requestsTestExecution)
+        if (AiAssistantCapabilityIntentClassifier.IsSafeTestExecutionRequest(message))
         {
             missingSkill = new AiAssistantMissingSkillDto(
                 "demo.test.run.v1",
@@ -702,14 +654,4 @@ public static class AiAssistantGoalPlanningOutputContract
             .Distinct(StringComparer.Ordinal).Take(max).ToArray();
     private static string NormalizeRisk(string value)
         => value is "low" or "medium" or "high" or "critical" ? value : "medium";
-    private static bool ContainsAny(string value, params string[] terms)
-        => terms.Any(term => value.Contains(term, StringComparison.Ordinal));
-    private static string Normalize(string value)
-    {
-        var source = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(source.Length);
-        foreach (var character in source)
-            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark) builder.Append(character);
-        return builder.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant().Replace('đ', 'd');
-    }
 }

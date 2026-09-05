@@ -260,12 +260,22 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         }
 
         var currentUserId = _currentUser.UserId!.Value;
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            projectId,
+            taskIds = taskIds.OrderBy(id => id).ToArray(),
+            window.Data.Start,
+            window.Data.End,
+            requestedAssignee = dto.RequestedAssignee == null ? null : AiPromptLanguage.Normalize(dto.RequestedAssignee)
+        }, JsonOptions);
+        var requestHash = Hash(requestJson);
         var existing = await _jobs.GetQueryable()
             .Include(item => item.Drafts)
             .FirstOrDefaultAsync(item => item.RequestedById == currentUserId && item.IdempotencyKey == normalizedKey, ct);
         if (existing != null)
         {
-            if (existing.ProjectId != projectId || existing.JobType != "portfolio_schedule_proposal" || existing.Drafts.Count == 0)
+            if (existing.ProjectId != projectId || existing.JobType != "portfolio_schedule_proposal" || existing.Drafts.Count == 0 ||
+                existing.RequestHash != requestHash)
             {
                 return Result.Failure<PortfolioScheduleProposalDto>("The idempotency key was used for another request.", 409, AiErrorCodes.IdempotencyConflict);
             }
@@ -312,6 +322,10 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         {
             return Result.Failure<PortfolioScheduleProposalDto>("No eligible project member has an organization capacity scope.", 409, AiErrorCodes.InvalidRequest);
         }
+        var requestedAssignee = AiTaskPrompt.ResolveAssignee(dto.RequestedAssignee,
+            candidateUsers.Select(candidate => (candidate.UserId, candidate.FullName)));
+        if (requestedAssignee.Error != null)
+            return Result.Failure<PortfolioScheduleProposalDto>(requestedAssignee.Error, 422, AiErrorCodes.InvalidRequest);
 
         var organizationProjectIds = await _projects.GetQueryable()
             .AsNoTracking()
@@ -334,7 +348,7 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
 
         var proposalSources = new Dictionary<string, PortfolioScheduleSourceDto>(StringComparer.Ordinal);
         var items = new List<PortfolioScheduleProposalItemDto>(selectedTasks.Count);
-        foreach (var task in selectedTasks.OrderByDescending(item => PriorityRank(item.Priority)).ThenBy(item => item.DueDate))
+        foreach (var task in selectedTasks.OrderByDescending(item => PriorityRank(item.Priority)).ThenBy(item => item.DueDate).ThenBy(item => item.Id))
         {
             var requiredSkills = task.SkillRequirements
                 .Where(item => item.OrganizationSkill.IsActive)
@@ -383,8 +397,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 var candidateDue = AddBusinessDays(start, workDays - 1);
                 var additionalHours = IsAssignedTo(task, candidate.Candidate.UserId) ? 0m : estimate;
                 var blockers = new List<string>();
-                if (candidate.Capacity.CapacityState == "assumed_default")
-                    blockers.Add("Chưa có capacity được khai báo; không dùng mặc định 40h để tự giao việc");
+                if (candidate.Capacity.CapacityState == "missing_declared_capacity")
+                    blockers.Add("Chưa có capacity được khai báo; lịch trống không được coi là năng lực");
                 if (additionalHours > candidate.Capacity.RemainingHours)
                     blockers.Add($"Không đủ capacity: còn {candidate.Capacity.RemainingHours:0.#}h, cần thêm {additionalHours:0.#}h");
                 if (candidate.Capacity.AvailabilityWindows.Any(availability =>
@@ -397,7 +411,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                     blockers.Add("Không thể xếp trọn Task trong cửa sổ hiện tại");
                 return new CandidateSchedulePlan(candidate, rank, candidateDue, additionalHours, blockers);
             })
-            .OrderBy(item => item.BlockingReasons.Count > 0)
+            .OrderBy(item => requestedAssignee.Id.HasValue && item.Candidate.Candidate.UserId != requestedAssignee.Id.Value)
+            .ThenBy(item => item.BlockingReasons.Count > 0)
             .ThenBy(item => item.Rank)
             .ToList();
             var winnerPlan = candidatePlans.First();
@@ -409,7 +424,7 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 .ToList();
             var risks = new List<string>();
             if (!task.EstimatedHours.HasValue) risks.Add($"Thiếu estimate; dùng fallback {MissingEstimateFallbackHours}h");
-            if (winner.Capacity.CapacityState == "assumed_default") risks.Add("Capacity đang dùng mặc định 40h/tuần");
+            if (winner.Capacity.CapacityState == "missing_declared_capacity") risks.Add("Chưa có capacity được khai báo; phương án đang bị chặn");
             if (winner.Capacity.AssignedHours + winnerPlan.AdditionalHours > winner.Capacity.WindowCapacityHours) risks.Add("Đề xuất làm vượt capacity trong cửa sổ");
             if (task.DueDate.HasValue && due > task.DueDate.Value) risks.Add("Lịch khả thi muộn hơn deadline hiện tại");
             if (due > window.Data.End) risks.Add("Không thể xếp trọn trong cửa sổ đã chọn");
@@ -476,9 +491,21 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 EncodeRowVersion(task.RowVersion),
                 winnerPlan.BlockingReasons.Count == 0,
                 winnerPlan.BlockingReasons));
+            if (winnerPlan.BlockingReasons.Count == 0)
+            {
+                // Reserve proposed work within this batch so the next task cannot reuse
+                // the same remaining hours as if the preceding assignment did not exist.
+                capacityByMember[winner.Candidate.UserId] = winner.Capacity with
+                {
+                    AssignedHours = winner.Capacity.AssignedHours + winnerPlan.AdditionalHours,
+                    RemainingHours = winner.Capacity.RemainingHours - winnerPlan.AdditionalHours
+                };
+            }
         }
 
         var warnings = new List<string>();
+        if (requestedAssignee.Id.HasValue)
+            warnings.Add("Đã giữ người được giao theo yêu cầu. Nếu người này không đủ điều kiện, card bị chặn và giữ các ứng viên thay thế để bạn chọn; Qaly không tự đổi người.");
         if (capacity.HasRestrictedLoad) warnings.Add("Một phần tải công việc riêng tư chỉ được dùng dưới dạng tổng hợp, không hiển thị nội dung task.");
         if (items.Any(item => item.DeadlineRisks.Count > 0)) warnings.Add("Có đề xuất cần người quản lý xử lý cảnh báo trước khi xác nhận.");
         if (items.Any(item => item.BlockingReasons?.Count > 0)) warnings.Add("Không có phương án tự giao an toàn cho một hoặc nhiều Task; hãy chọn phương án thay thế hoặc cập nhật capacity/availability.");
@@ -493,8 +520,6 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             warnings,
             DateTimeOffset.UtcNow);
         var payloadJson = JsonSerializer.Serialize(payload, JsonOptions);
-        var requestJson = JsonSerializer.Serialize(new { projectId, taskIds, window.Data.Start, window.Data.End }, JsonOptions);
-        var requestHash = Hash(requestJson);
         var resultHash = Hash(payloadJson);
         var now = DateTimeOffset.UtcNow;
         var job = new AiJob
@@ -889,7 +914,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
         foreach (var person in people.OrderBy(item => item.FullName, StringComparer.OrdinalIgnoreCase))
         {
             var profile = profiles.FirstOrDefault(item => item.UserId == person.UserId);
-            var weekly = profile?.WeeklyCapacityHours ?? OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours;
+            // Missing declaration is unknown capacity, never implicit availability.
+            var weekly = profile?.WeeklyCapacityHours ?? 0m;
             var baseline = decimal.Round(CountWeekdays(start, end) * (weekly / 5m), 2);
             var windows = profile?.AvailabilityWindows
                 .Where(item => item.EndsAt > start && item.StartsAt < end)
@@ -916,7 +942,7 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
                 person.FullName,
                 person.AvatarUrl,
                 weekly,
-                profile == null ? "assumed_default" : windows.Count > 0 ? "declared_with_availability" : "declared",
+                profile == null ? "missing_declared_capacity" : windows.Count > 0 ? "declared_with_availability" : "declared",
                 capacity,
                 assignedHours,
                 remaining,
@@ -1001,8 +1027,8 @@ public sealed class PortfolioScheduleService : IPortfolioScheduleService
             var member = snapshot.Members.FirstOrDefault(candidate => candidate.UserId == item.ProposedAssigneeId);
             if (member == null)
                 return Result.Failure("Người được chọn không còn thuộc Organization.", 409, AiErrorCodes.SourceStale);
-            if (member.CapacityState == "assumed_default")
-                return Result.Failure($"{member.FullName} chưa khai báo capacity thật; không thể tự giao dựa trên mặc định 40h.", 409, AiErrorCodes.SourceStale);
+            if (member.CapacityState == "missing_declared_capacity")
+                return Result.Failure($"{member.FullName} chưa khai báo capacity thật; lịch trống không được coi là năng lực.", 409, AiErrorCodes.SourceStale);
             if (member.AvailabilityWindows.Any(window =>
                     string.Equals(window.Kind, MemberAvailabilityWindow.Unavailable, StringComparison.OrdinalIgnoreCase) &&
                     window.EndsAt > item.ProposedStart && window.StartsAt < item.ProposedDue))

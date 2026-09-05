@@ -20,6 +20,53 @@ public sealed class PortfolioScheduleApiTests : IClassFixture<IntegrationTestFac
     public PortfolioScheduleApiTests(IntegrationTestFactory factory) => _factory = factory;
 
     [Fact]
+    public async Task RequestedMemberWithInsufficientCapacity_IsKeptButBlockedWithoutSilentReplacement()
+    {
+        var data = await SeedAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            db.OrganizationMemberCapacityProfiles.Add(new OrganizationMemberCapacityProfile
+            {
+                OrganizationId = data.OrganizationId,
+                UserId = data.ContributorId,
+                WeeklyCapacityHours = 0,
+                TimeZoneId = "Asia/Ho_Chi_Minh"
+            });
+            await db.SaveChangesAsync();
+        }
+        using var manager = CreateClient(data.ManagerId);
+        var csrf = await GetCsrfTokenAsync(manager);
+        var start = DateTimeOffset.UtcNow.Date;
+        var response = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals",
+            new CreatePortfolioScheduleProposalDto([data.TargetTaskId], start, start.AddDays(14), "Portfolio Contributor"),
+            csrf, new Dictionary<string, string> { ["Idempotency-Key"] = $"requested-{Guid.NewGuid():N}" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var proposal = await ReadResultAsync<PortfolioScheduleProposalDto>(response);
+        var item = proposal.Items.Single();
+        item.ProposedAssigneeId.Should().Be(data.ContributorId);
+        item.BlockingReasons.Should().NotBeEmpty();
+        item.Selected.Should().BeFalse();
+        item.Alternatives.Should().NotBeEmpty();
+        var changedRequest = await SendWithCsrfAsync(manager, HttpMethod.Post,
+            $"/api/projects/{data.ProjectId}/schedule-proposals",
+            new CreatePortfolioScheduleProposalDto([data.TargetTaskId], start, start.AddDays(14), "Portfolio Manager"),
+            csrf, new Dictionary<string, string> { ["Idempotency-Key"] = await ReadJobKeyAsync(proposal.JobId) });
+        changedRequest.StatusCode.Should().Be(HttpStatusCode.Conflict, "the same key must not return the old assignee for a different request");
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await verifyDb.TaskItems.AsNoTracking().SingleAsync(task => task.Id == data.TargetTaskId)).AssigneeId.Should().BeNull();
+    }
+
+    private async Task<string> ReadJobKeyAsync(Guid jobId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<QalyDbContext>().AiJobs.AsNoTracking()
+            .SingleAsync(job => job.Id == jobId)).IdempotencyKey;
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-PORTFOLIO-SCHEDULE-01")]
     [Trait("TestId", "TEST-PORTFOLIO-SCHEDULE-02")]
     [Trait("TestId", "TEST-PORTFOLIO-SCHEDULE-03")]

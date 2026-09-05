@@ -179,6 +179,7 @@ public class OrganizationService : IOrganizationService
             UserId = ownerId,
             Role = OrganizationRoleRules.Owner
         }, ct);
+        await EnsureCapacityProfileAsync(organization.Id, ownerId, ct);
         await _unitOfWork.SaveChangesWithAuditAsync(
             _auditLogService,
             "Create",
@@ -486,6 +487,7 @@ public class OrganizationService : IOrganizationService
                 UserId = userId,
                 Role = normalizedRole
             }, ct);
+            await EnsureCapacityProfileAsync(organizationId, userId, ct);
             await _unitOfWork.SaveChangesWithAuditAsync(
                 _auditLogService,
                 "AddMember",
@@ -533,6 +535,34 @@ public class OrganizationService : IOrganizationService
         }
 
         return await AddMemberAsync(organizationId, userId.Value, role, ct);
+    }
+
+    /// <summary>
+    /// Organization membership and a usable weekly-capacity baseline are one business invariant.
+    /// The staffing engine remains fail-closed for truly inconsistent legacy data; new members
+    /// never appear as 0h merely because the optional profile form has not been opened yet.
+    /// </summary>
+    private async Task EnsureCapacityProfileAsync(Guid organizationId, Guid userId, CancellationToken ct)
+    {
+        if (_capacityProfileRepo == null)
+        {
+            return;
+        }
+
+        var exists = await _capacityProfileRepo.GetQueryable()
+            .AnyAsync(item => item.OrganizationId == organizationId && item.UserId == userId, ct);
+        if (exists)
+        {
+            return;
+        }
+
+        await _capacityProfileRepo.AddAsync(new OrganizationMemberCapacityProfile
+        {
+            OrganizationId = organizationId,
+            UserId = userId,
+            WeeklyCapacityHours = OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours,
+            TimeZoneId = "Asia/Ho_Chi_Minh"
+        }, ct);
     }
 
     public async Task<Result> UpdateMemberRoleAsync(Guid organizationId, Guid userId, string role, CancellationToken ct = default)

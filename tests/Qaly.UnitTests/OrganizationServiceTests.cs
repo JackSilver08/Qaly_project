@@ -52,9 +52,13 @@ public sealed class OrganizationServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue(result.Error);
         var organization = await _context.Organizations.SingleAsync();
         var owner = await _context.OrganizationMembers.SingleAsync();
+        var capacity = await _context.OrganizationMemberCapacityProfiles.SingleAsync();
         owner.OrganizationId.Should().Be(organization.Id);
         owner.UserId.Should().Be(ownerId);
         owner.Role.Should().Be(OrganizationRoleRules.Owner);
+        capacity.OrganizationId.Should().Be(organization.Id);
+        capacity.UserId.Should().Be(ownerId);
+        capacity.WeeklyCapacityHours.Should().Be(OrganizationMemberCapacityProfile.DefaultWeeklyCapacityHours);
         (await _context.ProfessionalProfileDefinitions.CountAsync(profile =>
             profile.OrganizationId == organization.Id)).Should().BeGreaterThan(0);
         unitOfWork.SaveCount.Should().Be(1,
@@ -101,6 +105,7 @@ public sealed class OrganizationServiceTests : IDisposable
         _context.ChangeTracker.Clear();
         (await _context.Organizations.CountAsync()).Should().Be(0);
         (await _context.OrganizationMembers.CountAsync()).Should().Be(0);
+        (await _context.OrganizationMemberCapacityProfiles.CountAsync()).Should().Be(0);
         (await _context.ProfessionalProfileDefinitions.CountAsync()).Should().Be(0);
     }
 
@@ -112,7 +117,8 @@ public sealed class OrganizationServiceTests : IDisposable
         new GenericRepository<ProfessionalProfileDefinition>(_context),
         unitOfWork,
         _currentUser.Object,
-        _audit.Object);
+        _audit.Object,
+        capacityProfileRepo: new GenericRepository<OrganizationMemberCapacityProfile>(_context));
 
     public void Dispose() => _context.Dispose();
 

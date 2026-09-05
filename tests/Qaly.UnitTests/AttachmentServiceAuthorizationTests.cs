@@ -308,7 +308,8 @@ public sealed class AttachmentServiceAuthorizationTests : IDisposable
             new UnitOfWork(_db),
             currentUser.Object,
             Mock.Of<IAuditLogService>(),
-            notifications ?? Mock.Of<INotificationService>());
+            notifications ?? Mock.Of<INotificationService>(),
+            Mock.Of<ITaskService>());
     }
 
     private static User User(Guid id, string email, string name)

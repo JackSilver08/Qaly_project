@@ -17,6 +17,70 @@ public sealed class AiActionComposerContractTests
     private static readonly string MemberRef = $"/projects/{ProjectId:D}/members/{MemberId:D}";
     private static readonly string SkillRef = $"/organizations/{OrganizationId:D}/skills/{SkillId:D}";
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NamedAssignmentAndTaskContentArePreservedInFallbackAndModelResult(bool withSprint)
+    {
+        var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(SnapshotJson(1), JsonOptions)!;
+        snapshot = snapshot with
+        {
+            UserIntent = "Tạo 1 task sửa đăng nhập; giao cho người được chọn",
+            TaskContent = "sửa đăng nhập",
+            RequestedAssigneeId = MemberId,
+            RequestedAssigneeName = snapshot.Members.Single(member => member.UserId == MemberId).Name,
+            Sprint = withSprint ? new AiActionSprintContextDto(Guid.NewGuid(), "Sprint 1", "Active",
+                DateTimeOffset.UtcNow.Date, DateTimeOffset.UtcNow.AddDays(14), ProjectRef + "#sprint") : null,
+            AllowedSourceRefs = withSprint ? [ProjectRef, MemberRef, SkillRef, ProjectRef + "#sprint"] : [ProjectRef, MemberRef, SkillRef]
+        };
+        var json = JsonSerializer.Serialize(snapshot, JsonOptions);
+        AiActionComposerOutputContract.TryBuildDeterministicFallback(json, out var result, out var error).Should().BeTrue(error);
+        var plan = JsonSerializer.Deserialize<AiActionPlanDto>(result, JsonOptions)!;
+        var task = plan.Options.Single().Commands.Single();
+        task.Title.Should().Be("sửa đăng nhập");
+        task.Description.Should().NotContain("giao cho");
+        task.AssigneeId.Should().Be(MemberId);
+        task.AssigneeMode.Should().Be("user_selected");
+        AiActionComposerOutputContract.TryValidateReviewedPlan(result, snapshot, out _, out error).Should().BeTrue(error);
+
+        if (!withSprint)
+        {
+            AiActionComposerOutputContract.TryBuildResult(ProviderPlan(), json, out result, out error).Should().BeTrue(error);
+            JsonSerializer.Deserialize<AiActionPlanDto>(result, JsonOptions)!.Options[0].Commands[0].AssigneeId.Should().Be(MemberId);
+        }
+    }
+
+    [Fact]
+    public void ModelCannotPutAssignmentDirectiveInTaskTitle()
+    {
+        var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(SnapshotJson(1), JsonOptions)! with
+        {
+            UserIntent = "Tạo 1 task sửa login; giao cho Kiệt",
+            TaskContent = "sửa login",
+            RequestedAssigneeId = MemberId
+        };
+        var model = JsonSerializer.Deserialize<AiActionPlanDto>(ProviderPlan(), JsonOptions)!;
+        var option = model.Options[0];
+        model = model with { Options = [option with { Commands = [option.Commands[0] with { Title = "Giao 3 task cho Kiệt" }] }] };
+        AiActionComposerOutputContract.TryBuildResult(JsonSerializer.Serialize(model, JsonOptions),
+            JsonSerializer.Serialize(snapshot, JsonOptions), out _, out var error).Should().BeFalse();
+        error.Should().Contain("assignment instructions");
+    }
+
+    [Fact]
+    public void ExplicitUnassignedPreventsAutoAssignment()
+    {
+        var snapshot = JsonSerializer.Deserialize<AiActionContextSnapshotDto>(SnapshotJson(1), JsonOptions)! with
+        {
+            UserIntent = "Tạo 1 task sửa login, để chưa giao",
+            LeaveUnassigned = true
+        };
+        AiActionComposerOutputContract.TryBuildDeterministicFallback(JsonSerializer.Serialize(snapshot, JsonOptions),
+            out var result, out var error).Should().BeTrue(error);
+        JsonSerializer.Deserialize<AiActionPlanDto>(result, JsonOptions)!.Options[0].Commands.Should()
+            .OnlyContain(command => command.AssigneeId == null && command.AssigneeMode == "unassigned");
+    }
+
     [Fact]
     public void TryBuildResult_AuthorizedCommands_ProducesCanonicalReviewablePlan()
     {
@@ -68,6 +132,12 @@ public sealed class AiActionComposerContractTests
     [InlineData("tạo mười task cho giai đoạn đầu", 10)]
     [InlineData("tạo mười hai công việc", 12)]
     [InlineData("create twenty tasks", 20)]
+    [InlineData("tạo muoi hai task", 12)]
+    [InlineData("Tạo 111 task", 111)]
+    [InlineData("Tạo 1000 task", 1000)]
+    [InlineData("Đang có 10 task; hãy tạo 3 task mới", 3)]
+    [InlineData("Không tạo 10 task; hãy soạn 4 task", 4)]
+    [InlineData("Trong Sprint có 10 task, hãy thêm ba task", 3)]
     [InlineData("phân tích sprint hiện tại", null)]
     public void ExtractRequestedTaskCount_UnderstandsExplicitNaturalLanguageCount(string message, int? expected)
         => AiActionComposerService.ExtractRequestedTaskCount(message).Should().Be(expected);

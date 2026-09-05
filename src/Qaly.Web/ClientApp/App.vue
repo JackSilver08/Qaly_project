@@ -47,6 +47,7 @@ import {
 } from "./utils/formatters";
 import { fallbackProjectPermissions } from "./utils/project-roles";
 import { taskStatusColumns } from "./utils/task-workspace";
+import { taskNextStatuses } from "./utils/task-transitions";
 import type {
   ProjectCardModel,
   SummaryCardModel,
@@ -412,6 +413,11 @@ const projectPermissions = computed<ProjectPermissionsDto | null>(() => {
     isOwner: project.ownerId?.toLowerCase() === userId,
     isSystemAdmin: String(user.role || "").toLowerCase() === "admin",
   });
+});
+
+const taskCreationProject = computed(() => {
+  if (selectedProject.value?.permissions?.canCreateTask) return selectedProject.value;
+  return projects.value.find((project) => project.permissions?.canCreateTask) ?? null;
 });
 
 const isProjectAdmin = computed(() => projectPermissions.value?.canManageProject ?? false);
@@ -851,19 +857,17 @@ function createProjectFromSearch() {
 }
 
 function createTaskFromSearch() {
+  const project = taskCreationProject.value;
+  if (!project) return;
   closeGlobalSearch();
-  if (!selectedProject.value && projects.value[0]) {
-    activeProjectId.value = projects.value[0].id;
-  }
+  activeProjectId.value = project.id;
   activeProjectTab.value = "tasks";
   createTaskOpen.value = true;
-  if (selectedProject.value?.id) {
-    void router.push({
-      name: "project-detail",
-      params: { projectId: selectedProject.value.id },
-      query: { tab: "tasks" },
-    });
-  }
+  void router.push({
+    name: "project-detail",
+    params: { projectId: project.id },
+    query: { tab: "tasks" },
+  });
 }
 
 function handleGlobalSearchKeydown(event: KeyboardEvent) {
@@ -1156,8 +1160,11 @@ async function reviewEvidence(attachmentId: string, approve: boolean, reviewNote
       method: "POST",
       body: JSON.stringify({ approve, reviewNote }),
     });
+    await loadDashboard();
     if (selectedTask.value) await loadAttachments(selectedTask.value.id);
-    showSuccess("Thành công");
+    showSuccess(approve
+      ? "Đã duyệt minh chứng và tự động hoàn thành nhiệm vụ."
+      : "Đã trả minh chứng để cập nhật lại.");
   } catch (err) {
     showError(errorMessage(err, "Lỗi"));
   }
@@ -1232,18 +1239,11 @@ function tasksByStatus(status: string) {
     );
 }
 
-function nextStatuses(status: string) {
-  const allowedTransitions: Record<string, string[]> = {
-    Todo: ["InProgress", "OnHold"],
-    InProgress: ["InReview", "OnHold", "Done"],
-    InReview: ["InProgress", "Done", "OnHold"],
-    OnHold: ["Todo", "InProgress"],
-    Done: ["InReview"],
-  };
-
-  return (allowedTransitions[status] ?? []).filter((item) =>
-    statusColumns.value.includes(item),
-  );
+function nextStatuses(task: { id: string }) {
+  const project = projects.value.find(p => p.tasks.some(t => t.id === task.id));
+  const canonicalTask = project?.tasks.find(t => t.id === task.id);
+  if (!project || !canonicalTask) return [];
+  return taskNextStatuses(canonicalTask, project, project.permissions, currentUser.value?.id);
 }
 
 function toDashboardNotification(n: NotificationDto): DashboardNotification {
@@ -1445,7 +1445,7 @@ provide(dashboardContextKey, {
               <Plus :size="15" />
               Tạo dự án
             </button>
-            <button type="button" @click="createTaskFromSearch">
+            <button v-if="taskCreationProject" type="button" @click="createTaskFromSearch">
               <Plus :size="15" />
               Tạo nhiệm vụ
             </button>

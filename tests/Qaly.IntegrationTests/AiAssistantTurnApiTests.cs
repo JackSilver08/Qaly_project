@@ -128,6 +128,28 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         turn.ProjectLaunchPlan.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("Không tạo Project; chỉ phân tích tiến độ Project hiện tại")]
+    [InlineData("Xin chào, tóm tắt tiến độ Project hiện tại")]
+    [InlineData("Phân tích task đào tạo nhân sự trong Project")]
+    public async Task ReadOrNegatedPrompt_ReturnsAuthorizedReadWithoutDraftOrMutation(string message)
+    {
+        var projectId = await SeedOwnedProjectAsync();
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(message,
+            new AiAssistantClientContextDto("/analytics", "analytics", projectId)));
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = (await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        turn.GoalAnalysis!.SelectedSkills.Should().ContainSingle(item => item.SkillId == AiAssistantContextContract.GroundedReadCapability);
+        turn.Artifact.Should().BeNull();
+        turn.ProjectLaunchBrief.Should().BeNull();
+        turn.SourceDisclosures.Should().Contain(item => item.SourceId == AiAssistantContextContract.ProjectSummarySource && item.Status == "read");
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskItems.CountAsync(item => item.ProjectId == projectId)).Should().Be(0);
+        (await db.AiJobs.CountAsync(item => item.ProjectId == projectId)).Should().Be(0);
+        (await db.Projects.CountAsync()).Should().Be(1);
+    }
+
     [Fact]
     [Trait("TestId", "TEST-UA-05")]
     public async Task TaskCreateIntent_WithoutProject_ReturnsStructuredAuthorizedClarification()
@@ -1522,6 +1544,11 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
             item.Contains("member-professional-profile", StringComparison.Ordinal));
         selectedScenario.ManagerCandidates.Should().Contain(item =>
             item.ManagerEligible && item.UserId == selectedScenario.ManagerUserId);
+        selectedScenario.ManagerCandidates.Should().Contain(item =>
+            item.UserId == selectedScenario.ManagerUserId &&
+            item.ProfessionalProfiles != null &&
+            item.ProfessionalProfiles.Contains("product-project-manager"),
+            "staffing UI must receive the verified professional role used by manager eligibility");
         if (selectedScenario.Feasible)
         {
             plannedTasks.Should().OnlyContain(task => task.ProposedAssigneeId.HasValue,
@@ -1891,6 +1918,276 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
     }
 
     [Fact]
+    public async Task ProjectLaunchPlan_ChangingManager_RejectsStaleRoleThenPersistsConsistentTeam()
+    {
+        var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
+        Guid alternateManagerId;
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var managerProfile = await db.ProfessionalProfileDefinitions.SingleAsync(item =>
+                item.OrganizationId == organizationId && item.Key == "product-project-manager");
+            var alternate = new User
+            {
+                FullName = "Alternate reviewed manager",
+                Email = $"{Guid.NewGuid():N}@assistant-manager.test",
+                PasswordHash = "not-used",
+                Role = "User",
+                IsActive = true
+            };
+            alternateManagerId = alternate.Id;
+            db.AddRange(alternate,
+                new OrganizationMember { OrganizationId = organizationId, UserId = alternate.Id, Role = OrganizationRoleRules.Member },
+                new OrganizationMemberCapacityProfile { OrganizationId = organizationId, UserId = alternate.Id, WeeklyCapacityHours = 40, TimeZoneId = "Asia/Ho_Chi_Minh" },
+                new OrganizationMemberProfessionalProfile
+                {
+                    OrganizationId = organizationId,
+                    UserId = alternate.Id,
+                    ProfessionalProfileDefinitionId = managerProfile.Id,
+                    Proficiency = ProfessionalProfileCatalog.Expert,
+                    VerificationStatus = OrganizationMemberProfessionalProfile.Verified,
+                    Source = ProfessionalProfileCatalog.ManagerConfirmed,
+                    VerifiedByUserId = _factory.TestUserId,
+                    VerifiedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                    EffectiveFrom = DateTimeOffset.UtcNow.AddYears(-1)
+                });
+            await db.SaveChangesAsync();
+        }
+        var plan = await CreateProjectLaunchPlanAsync(organizationId);
+        var scenario = plan.StaffingScenarios.First(item => item.Feasible);
+        var newManagerId = scenario.ManagerUserId == alternateManagerId ? _factory.TestUserId : alternateManagerId;
+        scenario.ManagerCandidates.Single(item => item.UserId == newManagerId).ManagerEligible.Should().BeTrue();
+        var staffing = scenario.ManagerCandidates.Where(item => item.StaffingEligible).Select(candidate => new ProjectStaffingOverrideDto(
+            candidate.UserId,
+            candidate.UserId == scenario.ManagerUserId || candidate.UserId == newManagerId ? ProjectRoleRules.Manager : ProjectRoleRules.Member,
+            1m,
+            Included: true,
+            Manager: candidate.UserId == newManagerId)).ToArray();
+        var request = new UpdateProjectLaunchPlanRequestDto(plan.RowRevision, scenario.ScenarioId, staffing,
+            plan.DeliveryPlan.Sprints, ProjectLaunchAssignmentModes.AutoBalance);
+
+        // This is the former quick-select payload: a new manager flag but a
+        // Manager role still attached to the old manager. Do not weaken RBAC.
+        var rejected = await SendPlanUpdateResponseAsync($"/api/ai/project-launch/plans/{plan.PlanId:D}", request);
+        rejected.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await rejected.Content.ReadAsStringAsync()).Should().Contain("project_launch_role_invalid");
+
+        var consistent = staffing.Select(item => item with
+        {
+            ProposedRole = item.Manager ? ProjectRoleRules.Manager : ProjectRoleRules.Member
+        }).ToArray();
+        var response = await SendPlanUpdateResponseAsync($"/api/ai/project-launch/plans/{plan.PlanId:D}",
+            request with { Staffing = consistent });
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+
+        var reload = await _client.GetAsync($"/api/ai/project-launch/plans/{plan.PlanId:D}");
+        reload.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await reload.Content.ReadAsStringAsync());
+        var saved = document.RootElement.GetProperty("data").Deserialize<ProjectLaunchPlanDto>(JsonOptions)!;
+        saved.RowRevision.Should().Be(plan.RowRevision + 1, "the rejected update must not change the draft");
+        var selected = saved.StaffingScenarios.Single(item => item.ScenarioId == saved.SelectedScenarioId);
+        selected.ManagerUserId.Should().Be(newManagerId);
+        selected.Members.Should().ContainSingle(item => item.ProposedRole == ProjectRoleRules.Manager)
+            .Which.UserId.Should().Be(newManagerId);
+        selected.Members.Single(item => item.UserId == scenario.ManagerUserId).ProposedRole.Should().Be(ProjectRoleRules.Member);
+        saved.ExecutionReceipt.Should().BeNull("reviewing a team must not create a Project");
+    }
+
+    [Fact]
+    [Trait("TestId", "TEST-AI-NATIVE-TEAM-SKILL-COVERAGE-01")]
+    public async Task ProjectLaunchPlan_AutoBalance_AllowsCrossFunctionalTeamCoverageAndCreatesProject()
+    {
+        var organizationId = await SeedOwnedOrganizationWithRulebookAsync();
+        var contributorIds = new List<Guid>();
+        Guid[] skillIds;
+        string[] skillNames;
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            var skills = await db.OrganizationSkills
+                .Where(item => item.OrganizationId == organizationId && item.IsActive)
+                .OrderBy(item => item.Id)
+                .ToArrayAsync();
+            skills.Should().HaveCountGreaterThanOrEqualTo(5);
+            skillIds = skills.Take(5).Select(item => item.Id).ToArray();
+            skillNames = skills.Take(5).Select(item => item.Name).ToArray();
+
+            var ownerEvidence = await db.TaskSkillRequirements
+                .Where(item => item.TaskItem.Project.OrganizationId == organizationId &&
+                               item.TaskItem.Title == "Confirmed delivery baseline")
+                .OrderBy(item => item.OrganizationSkillId)
+                .ToArrayAsync();
+            db.TaskSkillRequirements.RemoveRange(ownerEvidence.Skip(1));
+
+            for (var contributorIndex = 0; contributorIndex < 2; contributorIndex++)
+            {
+                var contributor = new User
+                {
+                    FullName = $"Cross-functional contributor {contributorIndex + 1}",
+                    Email = $"{Guid.NewGuid():N}@cross-functional-launch.test",
+                    PasswordHash = "not-used",
+                    Role = "User",
+                    IsActive = true
+                };
+                var evidenceProject = new Project
+                {
+                    OrganizationId = organizationId,
+                    Name = $"Cross-functional evidence {contributorIndex + 1}",
+                    Code = $"CF-{Guid.NewGuid():N}"[..12],
+                    OwnerId = _factory.TestUserId,
+                    Status = "Archived"
+                };
+                var evidenceTask = new TaskItem
+                {
+                    ProjectId = evidenceProject.Id,
+                    ReporterId = _factory.TestUserId,
+                    AssigneeId = contributor.Id,
+                    Title = $"Cross-functional verified evidence {contributorIndex + 1}",
+                    Status = "Done",
+                    Priority = "Medium",
+                    EstimatedHours = 8,
+                    ActualHours = 8,
+                    DueDate = DateTimeOffset.UtcNow.AddDays(-2)
+                };
+                db.AddRange(
+                    contributor,
+                    evidenceProject,
+                    evidenceTask,
+                    new OrganizationMember
+                    {
+                        OrganizationId = organizationId,
+                        UserId = contributor.Id,
+                        Role = OrganizationRoleRules.Member
+                    },
+                    new OrganizationMemberCapacityProfile
+                    {
+                        OrganizationId = organizationId,
+                        UserId = contributor.Id,
+                        WeeklyCapacityHours = 40,
+                        TimeZoneId = "Asia/Ho_Chi_Minh"
+                    });
+                var contributorSkills = contributorIndex == 0 ? skillIds.Skip(1).Take(2) : skillIds.Skip(3).Take(2);
+                db.TaskSkillRequirements.AddRange(contributorSkills.Select(skillId => new TaskSkillRequirement
+                {
+                    TaskItemId = evidenceTask.Id,
+                    OrganizationSkillId = skillId,
+                    RequiredLevel = "Intermediate",
+                    Provenance = "MANUAL",
+                    ConfirmedByUserId = _factory.TestUserId,
+                    ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-2)
+                }));
+                db.TaskCompletionAttributions.Add(new TaskCompletionAttribution
+                {
+                    TaskItemId = evidenceTask.Id,
+                    ContributorUserId = contributor.Id,
+                    ConfirmedByUserId = _factory.TestUserId,
+                    CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                    ConfirmedAt = DateTimeOffset.UtcNow.AddDays(-1),
+                    Status = TaskCompletionAttribution.Confirmed
+                });
+                if (contributorIndex == 1)
+                {
+                    var workloadProject = new Project
+                    {
+                        OrganizationId = organizationId,
+                        Name = "Existing overloaded week",
+                        Code = $"OL-{Guid.NewGuid():N}"[..12],
+                        OwnerId = _factory.TestUserId,
+                        Status = "Active"
+                    };
+                    var workloadTask = new TaskItem
+                    {
+                        ProjectId = workloadProject.Id,
+                        ReporterId = _factory.TestUserId,
+                        AssigneeId = contributor.Id,
+                        Title = "Existing commitment outside this launch",
+                        Status = "InProgress",
+                        Priority = "High",
+                        EstimatedHours = 80,
+                        StartDate = DateTimeOffset.UtcNow.Date.AddDays(1),
+                        DueDate = DateTimeOffset.UtcNow.Date.AddDays(6)
+                    };
+                    db.AddRange(
+                        workloadProject,
+                        workloadTask,
+                        new ProjectMember
+                        {
+                            ProjectId = workloadProject.Id,
+                            UserId = contributor.Id,
+                            Role = ProjectRoleRules.Member
+                        },
+                        new TaskAssignment
+                        {
+                            TaskItemId = workloadTask.Id,
+                            UserId = contributor.Id,
+                            AssignedByUserId = _factory.TestUserId
+                        });
+                }
+                contributorIds.Add(contributor.Id);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var plan = await CreateProjectLaunchPlanAsync(organizationId);
+        var baseScenario = plan.StaffingScenarios[0];
+        var candidates = baseScenario.ManagerCandidates.Where(item => item.StaffingEligible).ToArray();
+        candidates.Select(item => item.UserId).Should().Contain(contributorIds[0]);
+        candidates.Select(item => item.UserId).Should().Contain(contributorIds[1]);
+        var firstSelected = false;
+        var reviewedSprints = plan.DeliveryPlan.Sprints.Select(sprint => sprint with
+        {
+            Tasks = sprint.Tasks.Select(task =>
+            {
+                if (firstSelected) return task with { Selected = false };
+                firstSelected = true;
+                return task with
+                {
+                    Selected = true,
+                    EstimatedHours = 8,
+                    RequiredSkillIds = skillIds,
+                    RequiredSkillNames = skillNames,
+                    ProposedAssigneeId = null,
+                    ProposedReviewerId = null,
+                    DependencyClientIds = []
+                };
+            }).ToArray()
+        }).ToArray();
+        var staffing = candidates.Select(candidate => new ProjectStaffingOverrideDto(
+            candidate.UserId,
+            candidate.UserId == baseScenario.ManagerUserId ? ProjectRoleRules.Manager : ProjectRoleRules.Member,
+            Math.Max(1m, candidate.AvailableHours),
+            Included: true,
+            Manager: candidate.UserId == baseScenario.ManagerUserId)).ToArray();
+
+        var response = await SendPlanUpdateResponseAsync(
+            $"/api/ai/project-launch/plans/{plan.PlanId:D}",
+            new UpdateProjectLaunchPlanRequestDto(
+                plan.RowRevision,
+                baseScenario.ScenarioId,
+                staffing,
+                reviewedSprints,
+                ProjectLaunchAssignmentModes.AutoBalance,
+                ProjectLaunchScheduleModes.SequentialSprints));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var saved = document.RootElement.GetProperty("data").Deserialize<ProjectLaunchPlanDto>(JsonOptions)!;
+        saved.BlockingReasons.Should().BeEmpty("cross-functional team review returned: {0}", JsonSerializer.Serialize(saved.BlockingReasons, JsonOptions));
+        saved.State.Should().Be("pending_review");
+        saved.BlockingReasons.Should().NotContain(item => item.StartsWith("Ngưỡng sử dụng tuần ", StringComparison.Ordinal));
+        var selectedTask = saved.DeliveryPlan.Sprints.SelectMany(item => item.Tasks).Single(item => item.Selected);
+        selectedTask.ProposedAssigneeId.Should().NotBeNull();
+        selectedTask.ProposedReviewerId.Should().NotBe(selectedTask.ProposedAssigneeId!.Value);
+
+        var confirmed = await SendLaunchCommandAsync<ConfirmProjectLaunchPlanRequestDto, ProjectLaunchPlanDto>(
+            $"/api/ai/project-launch/plans/{plan.PlanId:D}/confirm",
+            new ConfirmProjectLaunchPlanRequestDto(true, saved.RowRevision, saved.SelectedScenarioId!),
+            $"integration-cross-functional-confirm-{plan.PlanId:N}");
+        confirmed.ExecutionReceipt.Should().NotBeNull();
+        confirmed.ExecutionReceipt!.ReadBackVerified.Should().BeTrue();
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-AI-NATIVE-PLAN-INTEGRITY-01")]
     public async Task ProjectLaunchPlan_RejectsPrivilegedRoleAndForeignOrganizationSkill()
     {
@@ -2249,6 +2546,77 @@ public sealed class AiAssistantTurnApiTests : IClassFixture<IntegrationTestFacto
         unchanged.AssigneeId.Should().BeNull("P12/P13 only review the proposal before the card confirmation");
         unchanged.StartDate.Should().BeNull();
         (await verifyDb.TaskAssignments.CountAsync(item => item.TaskItemId == seeded.TaskId)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Tạo 3 task giao cho người Assignment Alternative", "task.create.v1")]
+    [InlineData("Giao 3 task cho người Assignment Alternative", "task.assignment_schedule.v1")]
+    public async Task AmbiguousTaskInstructions_AskForContentOrExactSelectionWithoutCreatingDraft(string prompt, string intent)
+    {
+        var seeded = await SeedAssistantAssignmentTaskAsync();
+        var context = new AiAssistantClientContextDto($"/projects/{seeded.ProjectId}/tasks/{seeded.TaskId}",
+            "task", seeded.ProjectId, "task", seeded.TaskId);
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(prompt, context));
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = (await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        turn.Intent.Should().Be(intent);
+        turn.Disposition.Should().Be("clarification_required");
+        turn.Artifact.Should().BeNull();
+        turn.PortfolioScheduleProposal.Should().BeNull();
+        turn.Answer!.Actions.Should().NotBeEmpty();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.AiJobs.CountAsync(job => job.ProjectId == seeded.ProjectId)).Should().Be(0);
+        (await db.TaskItems.CountAsync(task => task.ProjectId == seeded.ProjectId)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ExistingTaskAssignment_PreservesNamedMemberOnTheReviewCard()
+    {
+        var seeded = await SeedAssistantAssignmentTaskAsync();
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "Giao Task đang mở cho người Assignment Alternative; mở card review, chưa ghi dữ liệu.",
+            new AiAssistantClientContextDto($"/projects/{seeded.ProjectId}/tasks/{seeded.TaskId}", "task",
+                seeded.ProjectId, "task", seeded.TaskId)));
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = (await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        turn.PortfolioScheduleProposal.Should().NotBeNull();
+        turn.PortfolioScheduleProposal!.Items.Single().ProposedAssigneeName.Should().Be("Assignment Alternative");
+        turn.Artifact.Should().BeNull();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.TaskItems.AsNoTracking().SingleAsync(task => task.Id == seeded.TaskId)).AssigneeId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExistingTaskBatch_UsesAllSelectedIdsInsteadOfOnlyTheFirstTask()
+    {
+        var seeded = await SeedAssistantAssignmentTaskAsync();
+        var taskIds = new List<Guid> { seeded.TaskId };
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            for (var i = 0; i < 2; i++)
+            {
+                var task = new TaskItem { ProjectId = seeded.ProjectId, ReporterId = _factory.TestUserId,
+                    Title = $"Batch work {i}", Status = "Todo", EstimatedHours = 4, RowVersion = [1, 3, 7] };
+                db.TaskItems.Add(task);
+                taskIds.Add(task.Id);
+            }
+            await db.SaveChangesAsync();
+        }
+        var response = await PostTurnAsync(new AiAssistantTurnRequestDto(
+            "Giao 3 task đã chọn cho Assignment Alternative; mở card review.",
+            new AiAssistantClientContextDto($"/projects/{seeded.ProjectId}", "projects",
+                seeded.ProjectId, "project", seeded.ProjectId, taskIds)));
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var turn = (await response.Content.ReadFromJsonAsync<AiAssistantTurnResponseDto>(JsonOptions))!;
+        turn.PortfolioScheduleProposal.Should().NotBeNull();
+        turn.PortfolioScheduleProposal!.Items.Select(item => item.TaskId).Should().BeEquivalentTo(taskIds);
+        turn.PortfolioScheduleProposal.Items.Should().OnlyContain(item => item.ProposedAssigneeName == "Assignment Alternative");
+        using var reloadScope = _factory.Services.CreateScope();
+        var reloadDb = reloadScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await reloadDb.TaskItems.Where(task => taskIds.Contains(task.Id)).ToListAsync()).Should().OnlyContain(task => task.AssigneeId == null);
     }
 
     [Fact]

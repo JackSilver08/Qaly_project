@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Award, BriefcaseBusiness, Building2, MailPlus, RefreshCw, Search, ShieldCheck, Trash2, Users } from 'lucide-vue-next'
+import { Award, BriefcaseBusiness, Building2, MailPlus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Trash2, Users, X } from 'lucide-vue-next'
 import MemberSkillEvidenceDrawer from '../components/MemberSkillEvidenceDrawer.vue'
 import MemberProfessionalProfileDrawer from '../components/MemberProfessionalProfileDrawer.vue'
 import PageStatePanel from '../components/PageStatePanel.vue'
@@ -15,6 +15,7 @@ import {
   canViewProfessionalProfiles,
   type OrganizationActorContext,
 } from '../utils/organization-access'
+import { projectRoleLabel } from '../utils/project-roles'
 
 interface Organization {
   id: string
@@ -51,6 +52,8 @@ const organizations = ref<Organization[]>([])
 const members = ref<OrganizationMember[]>([])
 const selectedId = ref('')
 const search = ref('')
+const roleFilter = ref('')
+const joinedFilter = ref('')
 const isLoadingOrganizations = ref(true)
 const isLoadingMembers = ref(false)
 const loadingError = ref('')
@@ -60,23 +63,72 @@ const evidenceMember = ref<OrganizationMember | null>(null)
 const professionalProfileMember = ref<OrganizationMember | null>(null)
 const invite = ref({ email: '', role: 'Member' })
 const moderatorCapabilities = ref<string[]>([])
+let memberLoadVersion = 0
 
 const selectedOrganization = computed(
   () => organizations.value.find((item) => item.id === selectedId.value) ?? null,
 )
 
-const visibleMembers = computed(() => {
-  const term = search.value.trim().toLowerCase()
-  if (!term) return members.value
+function searchable(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase()
+}
 
-  return members.value.filter(
-    (item) =>
-      item.fullName.toLowerCase().includes(term) ||
-      item.email.toLowerCase().includes(term) ||
-      (item.projects ?? []).some(project => `${project.projectName} ${project.projectCode} ${project.role}`.toLowerCase().includes(term)) ||
-      (item.skills ?? []).some(skill => skill.toLowerCase().includes(term)),
-  )
+function filterRole(role: string) {
+  const value = role.trim().toLowerCase()
+  if (value === 'admin' || value === 'manager') return 'OrganizationAdmin'
+  return ['Owner', ...roles].find(item => item.toLowerCase() === value) ?? role
+}
+
+const roleOptions = computed(() => {
+  const counts = new Map<string, number>()
+  for (const member of members.value) {
+    const role = filterRole(member.role)
+    counts.set(role, (counts.get(role) ?? 0) + 1)
+  }
+  return [...new Set(['Owner', ...roles, ...counts.keys()])].map(role => ({
+    value: role, label: roleLabel(role), count: counts.get(role) ?? 0,
+  }))
 })
+
+const hasFilters = computed(() => !!(search.value.trim() || roleFilter.value || joinedFilter.value))
+
+const visibleMembers = computed(() => {
+  const term = searchable(search.value.trim())
+  const now = Date.now()
+  const joinedSince = joinedFilter.value ? now - Number(joinedFilter.value) * 86400000 : null
+
+  return members.value.filter(item => {
+    const matchesText = !term ||
+      searchable(item.fullName).includes(term) ||
+      searchable(item.email).includes(term) ||
+      (item.projects ?? []).some(project => searchable(`${project.projectName} ${project.projectCode} ${project.role}`).includes(term)) ||
+      (item.skills ?? []).some(skill => searchable(skill).includes(term))
+    if (!matchesText) return false
+    if (roleFilter.value && filterRole(item.role) !== roleFilter.value) return false
+    if (joinedSince !== null) {
+      const joinedAt = Date.parse(item.joinedAt)
+      if (!Number.isFinite(joinedAt) || joinedAt < joinedSince || joinedAt > now) return false
+    }
+    return true
+  })
+})
+
+function clearFilters() {
+  search.value = ''
+  roleFilter.value = ''
+  joinedFilter.value = ''
+}
+
+function projectRoleCount(projects: OrganizationMember['projects']) {
+  return new Set((projects ?? []).map(project => projectRoleLabel(project.role))).size
+}
+
+function changeOrganization() {
+  clearFilters()
+  evidenceMember.value = null
+  professionalProfileMember.value = null
+  void loadMembers()
+}
 
 const myMembership = computed(() => members.value.find((item) => item.userId === me.value?.id))
 
@@ -134,24 +186,30 @@ async function loadOrganizations() {
 async function loadMembers() {
   if (!selectedId.value) return
 
+  const organizationId = selectedId.value
+  const loadVersion = ++memberLoadVersion
   isLoadingMembers.value = true
   loadingError.value = ''
+  members.value = []
+  moderatorCapabilities.value = []
 
   try {
     const [loadedMembers, capabilities] = await Promise.all([
-      apiResult<OrganizationMember[]>(`/api/organizations/${selectedId.value}/users`),
-      apiResult<string[]>(`/api/organizations/${selectedId.value}/moderator-capabilities`),
+      apiResult<OrganizationMember[]>(`/api/organizations/${organizationId}/users`),
+      apiResult<string[]>(`/api/organizations/${organizationId}/moderator-capabilities`),
     ])
 
+    if (loadVersion !== memberLoadVersion || organizationId !== selectedId.value) return
     members.value = loadedMembers
     moderatorCapabilities.value = capabilities
   } catch (error) {
+    if (loadVersion !== memberLoadVersion || organizationId !== selectedId.value) return
     members.value = []
     moderatorCapabilities.value = []
     loadingError.value = errorMessage(error, 'Không thể tải thành viên tổ chức.')
     showError(loadingError.value)
   } finally {
-    isLoadingMembers.value = false
+    if (loadVersion === memberLoadVersion) isLoadingMembers.value = false
   }
 }
 
@@ -239,7 +297,10 @@ function roleLabel(role: string) {
 }
 
 function joinedLabel(value: string) {
-  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium' }).format(new Date(value))
+  const date = new Date(value)
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium' }).format(date)
+    : 'Chưa có ngày tham gia'
 }
 
 onMounted(async () => {
@@ -300,7 +361,7 @@ onMounted(async () => {
         <label>
           <Building2 :size="18" />
           <span>Tổ chức</span>
-          <select v-model="selectedId" @change="loadMembers">
+          <select v-model="selectedId" aria-label="Chọn tổ chức" @change="changeOrganization">
             <option v-for="organization in organizations" :key="organization.id" :value="organization.id">
               {{ organization.name }} · {{ organization.code }}
             </option>
@@ -314,13 +375,33 @@ onMounted(async () => {
 
       <section v-if="hasOrganizations" class="toolbar" aria-label="Công cụ thành viên">
         <label class="search">
-          <Search :size="18" />
-          <input v-model="search" placeholder="Tìm theo tên hoặc email" />
+          <Search :size="18" aria-hidden="true" />
+          <input v-model="search" type="search" aria-label="Tìm thành viên theo tên hoặc email" placeholder="Tìm theo tên hoặc email" />
         </label>
-        <button type="button" class="icon-button" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải lại danh sách thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
+        <label class="filter-control">
+          <SlidersHorizontal :size="16" aria-hidden="true" />
+          <select v-model="roleFilter" aria-label="Lọc theo vai trò tổ chức">
+            <option value="">Tất cả vai trò</option>
+            <option v-for="option in roleOptions" :key="option.value" :value="option.value">{{ option.label }} ({{ option.count }})</option>
+          </select>
+        </label>
+        <label class="filter-control">
+          <select v-model="joinedFilter" aria-label="Lọc theo ngày tham gia">
+            <option value="">Mọi ngày tham gia</option>
+            <option value="7">Tham gia 7 ngày qua</option>
+            <option value="30">Tham gia 30 ngày qua</option>
+            <option value="90">Tham gia 90 ngày qua</option>
+          </select>
+        </label>
+        <button type="button" class="icon-button" :disabled="isLoadingMembers" :title="isLoadingMembers ? 'Đang tải' : 'Tải lại'" :aria-label="isLoadingMembers ? 'Đang tải lại danh sách thành viên' : 'Tải lại danh sách thành viên'" @click="loadMembers">
           <RefreshCw :size="18" :class="{ 'is-spinning': isLoadingMembers }" />
         </button>
       </section>
+
+      <div v-if="hasOrganizations && !isLoadingMembers && !loadingError" class="filter-summary">
+        <span role="status" aria-live="polite" aria-atomic="true">Hiển thị {{ visibleMembers.length }} / {{ selectedMemberCount }} thành viên<span v-if="hasFilters"> · đang lọc</span></span>
+        <button v-if="hasFilters" type="button" class="clear-filters" @click="clearFilters"><X :size="14" aria-hidden="true" /> Xóa bộ lọc</button>
+      </div>
 
       <PageStatePanel
         v-if="!selectedId || !selectedOrganization"
@@ -341,11 +422,20 @@ onMounted(async () => {
       />
 
       <PageStatePanel
+        v-else-if="loadingError"
+        variant="error"
+        title="Không thể tải thành viên"
+        :message="loadingError"
+      >
+        <template #actions><button type="button" class="secondary" @click="loadMembers">Thử lại</button></template>
+      </PageStatePanel>
+
+      <PageStatePanel
         v-else-if="!visibleMembers.length"
         variant="empty"
         title="Không tìm thấy thành viên"
         :message="
-          search.trim()
+          hasFilters
             ? 'Thử thay đổi từ khóa hoặc xóa bộ lọc hiện tại.'
             : 'Tổ chức này chưa có thành viên nào.'
         "
@@ -354,8 +444,9 @@ onMounted(async () => {
           <Users :size="22" />
         </template>
         <template #actions>
+          <button v-if="hasFilters" type="button" class="secondary" @click="clearFilters">Xóa bộ lọc</button>
           <button
-            v-if="canManage && hasCapability('organization.users.invite')"
+            v-else-if="canManage && hasCapability('organization.users.invite')"
             class="primary"
             type="button"
             aria-label="Thêm thành viên tổ chức"
@@ -368,11 +459,21 @@ onMounted(async () => {
 
       <div v-else class="table-wrap">
         <table aria-label="Thành viên tổ chức">
+          <colgroup>
+            <col class="member-column" />
+            <col class="organization-role-column" />
+            <col class="project-column" />
+            <col class="project-role-column" />
+            <col class="signals-column" />
+            <col class="joined-column" />
+            <col class="actions-column" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Thành viên</th>
               <th scope="col">Vai trò tổ chức</th>
-              <th scope="col">Project / role</th>
+              <th scope="col">Project</th>
+              <th scope="col">Vai trò dự án</th>
               <th scope="col">Skill &amp; capacity</th>
               <th scope="col">Ngày tham gia</th>
               <th scope="col"><span class="sr-only">Thao tác</span></th>
@@ -395,7 +496,7 @@ onMounted(async () => {
                 </span>
                 <select
                   v-else-if="canManage && hasCapability('organization.users.update_role')"
-                  :value="member.role"
+                  :value="filterRole(member.role)"
                   :aria-label="`Vai trò tổ chức của ${member.fullName}`"
                   :disabled="saving === member.userId"
                   @change="changeRole(member, ($event.target as HTMLSelectElement).value)"
@@ -407,22 +508,65 @@ onMounted(async () => {
                 <span v-else class="role">{{ roleLabel(member.role) }}</span>
               </td>
               <td class="project-memberships">
-                <RouterLink
-                  v-for="project in member.projects ?? []"
-                  :key="project.projectId"
-                  :to="{ name: 'project-detail', params: { projectId: project.projectId } }"
-                >
-                  {{ project.projectName }} ({{ project.projectCode }}) · {{ project.role }}
-                </RouterLink>
-                <small v-if="!member.projects?.length">Chưa tham gia project</small>
+                <details v-if="member.projects?.length" class="summary-disclosure summary-disclosure--projects">
+                  <summary :aria-label="`Xem ${member.projects.length} Project của ${member.fullName}`">
+                    <BriefcaseBusiness :size="14" aria-hidden="true" />
+                    <strong>{{ member.projects.length }}</strong>
+                    <span>dự án</span>
+                  </summary>
+                  <div class="compact-popover">
+                    <strong>Dự án đang tham gia</strong>
+                    <RouterLink
+                      v-for="project in member.projects"
+                      :key="project.projectId"
+                      class="popover-row"
+                      :to="{ name: 'project-detail', params: { projectId: project.projectId } }"
+                    >
+                      <span>{{ project.projectName }}</span>
+                      <small>{{ project.projectCode }}</small>
+                    </RouterLink>
+                  </div>
+                </details>
+                <small v-else class="empty-summary">Chưa có dự án</small>
+              </td>
+              <td class="project-roles">
+                <details v-if="member.projects?.length" class="summary-disclosure summary-disclosure--roles">
+                  <summary :aria-label="`Xem vai trò theo ${member.projects.length} Project của ${member.fullName}`">
+                    <ShieldCheck :size="14" aria-hidden="true" />
+                    <strong>{{ projectRoleCount(member.projects) }}</strong>
+                    <span>vai trò</span>
+                  </summary>
+                  <div class="compact-popover compact-popover--roles">
+                    <strong>Vai trò theo dự án</strong>
+                    <span v-for="project in member.projects" :key="project.projectId" class="popover-row">
+                      <b>{{ project.projectName }}</b>
+                      <small>{{ projectRoleLabel(project.role) }}</small>
+                    </span>
+                  </div>
+                </details>
+                <small v-else class="empty-summary">Chưa có vai trò</small>
               </td>
               <td class="people-signals">
-                <span v-for="skill in (member.skills ?? []).slice(0, 3)" :key="skill">{{ skill }}</span>
-                <strong v-if="member.weeklyCapacityHours != null">{{ member.weeklyCapacityHours }}h/tuần</strong>
-                <small v-if="member.capacityState === 'assumed_default'">Capacity mặc định</small>
+                <div v-if="member.weeklyCapacityHours != null || member.skills?.length" class="capacity-summary">
+                  <span v-if="member.weeklyCapacityHours != null" class="capacity-value">
+                    <strong>{{ member.weeklyCapacityHours }}h</strong><small>/tuần</small>
+                  </span>
+                  <details v-if="member.skills?.length" class="summary-disclosure summary-disclosure--skills">
+                    <summary :aria-label="`Xem ${member.skills.length} kỹ năng của ${member.fullName}`">
+                      <Award :size="14" aria-hidden="true" />
+                      <strong>{{ member.skills.length }}</strong>
+                      <span>kỹ năng</span>
+                    </summary>
+                    <div class="compact-popover compact-popover--skills">
+                      <strong>Kỹ năng chuyên môn</strong>
+                      <span v-for="skill in member.skills" :key="skill" class="popover-row">{{ skill }}</span>
+                    </div>
+                  </details>
+                </div>
+                <small v-if="member.capacityState === 'assumed_default'" class="capacity-note">Capacity mặc định</small>
                 <small v-else-if="member.weeklyCapacityHours == null">Không có quyền xem dữ liệu năng lực</small>
               </td>
-              <td>{{ joinedLabel(member.joinedAt) }}</td>
+              <td class="joined-at">{{ joinedLabel(member.joinedAt) }}</td>
               <td class="row-action">
                 <button
                   v-if="canViewProfessionalProfile"
@@ -511,7 +655,10 @@ onMounted(async () => {
 
 <style scoped>
 .org-users-page {
+  width: 100%;
+  min-width: 0;
   max-width: 1320px;
+  box-sizing: border-box;
   margin: auto;
   padding: 32px;
   color: var(--text-primary, #162033);
@@ -604,6 +751,12 @@ onMounted(async () => {
   color: inherit;
 }
 
+.table-wrap select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .context-stats {
   display: flex;
   gap: 18px;
@@ -613,14 +766,16 @@ onMounted(async () => {
 
 .toolbar {
   display: grid;
-  grid-template-columns: 1fr 44px;
+  grid-template-columns: minmax(180px, 1fr) minmax(190px, 220px) minmax(170px, 200px) 44px;
   gap: 10px;
 }
 
-.search {
+.search,
+.filter-control {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
   height: 44px;
   padding: 0 12px;
   border: 1px solid var(--border-color, #dce2ea);
@@ -628,12 +783,65 @@ onMounted(async () => {
   background: var(--surface, #fff);
 }
 
-.search input {
+.search input,
+.search input:focus,
+.search input:focus-visible {
+  min-width: 0;
   width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
+  padding: 0;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  appearance: none;
+  background: transparent !important;
   color: inherit;
+  font: inherit;
+}
+
+.search input::-webkit-search-decoration,
+.search input::-webkit-search-cancel-button { appearance: none; }
+
+.filter-control select {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search:focus-within,
+.filter-control:focus-within {
+  outline: 2px solid var(--primary, #2563eb);
+  outline-offset: 2px;
+}
+
+.search svg,
+.filter-control svg { flex-shrink: 0; }
+
+.filter-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-secondary, #687386);
+  font-size: 13px;
+}
+
+.clear-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--primary, #2563eb);
+  padding: 6px 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 .icon-button {
@@ -641,7 +849,11 @@ onMounted(async () => {
 }
 
 .table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow: auto;
+  overscroll-behavior-inline: contain;
   border: 1px solid var(--border-color, #dce2ea);
   border-radius: 14px;
   background: var(--surface, #fff);
@@ -649,14 +861,23 @@ onMounted(async () => {
 
 table {
   width: 100%;
-  min-width: 1060px;
+  min-width: 920px;
+  table-layout: fixed;
   border-collapse: collapse;
 }
+
+.member-column { width: 19%; }
+.organization-role-column { width: 16%; }
+.project-column { width: 15%; }
+.project-role-column { width: 14%; }
+.signals-column { width: 17%; }
+.joined-column { width: 8%; }
+.actions-column { width: 11%; }
 
 th,
 td {
   text-align: left;
-  padding: 14px 16px;
+  padding: 14px 12px;
   border-bottom: 1px solid var(--border-color, #e8edf3);
 }
 
@@ -677,6 +898,14 @@ th {
 .member > span:last-child {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.member strong,
+.member small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .member small {
@@ -684,6 +913,7 @@ th {
 }
 
 .avatar {
+  flex: 0 0 auto;
   width: 38px;
   height: 38px;
   border-radius: 10px;
@@ -709,44 +939,179 @@ th {
 }
 
 .project-memberships,
+.project-roles,
 .people-signals {
-  min-width: 170px;
+  min-width: 0;
 }
 
-.project-memberships a,
-.people-signals span {
-  display: inline-flex;
-  margin: 0 5px 5px 0;
-  padding: 4px 7px;
-  border-radius: 999px;
-  background: #eef3f0;
-  color: #285b42;
+.summary-disclosure {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.summary-disclosure > summary {
+  width: 100%;
+  min-height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #dbe5f0;
+  border-radius: 9px;
+  background: var(--surface-muted, #f8fafc);
+  color: #475569;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.summary-disclosure > summary::-webkit-details-marker { display: none; }
+.summary-disclosure > summary:hover,
+.summary-disclosure > summary:focus-visible {
+  border-color: #93b4f5;
+  background: #fff;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.summary-disclosure > summary strong {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.summary-disclosure > summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   font-weight: 700;
+}
+
+.summary-disclosure--projects > summary { background: #f0fdf4; color: #166534; }
+.summary-disclosure--roles > summary { background: #fff7ed; color: #9a3412; }
+.summary-disclosure--skills > summary { background: #eff6ff; color: #1d4ed8; }
+
+.compact-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  left: 0;
+  width: min(340px, 70vw);
+  display: none;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #dce2ea);
+  border-radius: 11px;
+  background: var(--surface, #fff);
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+}
+
+.summary-disclosure[open] > .compact-popover { display: grid; }
+.summary-disclosure--skills > .compact-popover { right: 0; left: auto; }
+
+.compact-popover > strong {
+  color: #334155;
+  font-size: 12px;
+}
+
+.popover-row {
+  min-width: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 !important;
+  padding: 7px 8px !important;
+  border-radius: 8px !important;
+  background: #f8fafc !important;
+  color: #334155 !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
   text-decoration: none;
+  white-space: normal;
 }
 
-.people-signals span {
-  background: #eef3ff;
-  color: #405d98;
+.popover-row:hover { background: #eef4ff !important; }
+.popover-row > span,
+.popover-row > b {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.project-memberships small,
-.people-signals small,
-.people-signals strong {
-  display: block;
-  margin-top: 3px;
+.popover-row > small {
+  flex: 0 0 auto;
+  margin: 0;
+  color: #64748b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.capacity-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.capacity-summary .summary-disclosure { flex: 1 1 auto; }
+
+.capacity-value {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.capacity-value strong {
+  margin: 0;
+  color: #166534;
+  font-size: 13px;
+}
+
+.capacity-value small,
+.capacity-note,
+.empty-summary,
+.people-signals > small {
   color: var(--text-secondary, #687386);
+  font-size: 10px;
+}
+
+.capacity-note {
+  display: block;
+  margin-top: 4px;
+}
+
+.empty-summary {
+  display: inline-block;
+  padding: 6px 0;
   font-size: 11px;
 }
 
-.people-signals strong {
-  color: #166534;
+.summary-disclosure:hover > .compact-popover,
+.summary-disclosure:focus-within > .compact-popover {
+  display: grid;
 }
 
 .row-action {
+  padding-right: 8px;
+  padding-left: 8px;
   text-align: right;
   white-space: nowrap;
+}
+
+.row-action .professional-profile,
+.row-action .evidence,
+.row-action .remove {
+  padding: 5px;
+}
+
+.joined-at {
+  color: var(--text-secondary, #687386);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .evidence {
@@ -861,6 +1226,11 @@ button:disabled {
   }
 }
 
+@media (max-width: 1100px) {
+  .toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; }
+  .toolbar .search { grid-column: 1 / -1; }
+}
+
 @media (max-width: 720px) {
   .org-users-page {
     padding: 20px 16px;
@@ -888,6 +1258,12 @@ button:disabled {
   .modal-actions button {
     width: 100%;
   }
+}
+
+@media (max-width: 440px) {
+  .toolbar { grid-template-columns: minmax(0, 1fr) 44px; }
+  .toolbar .filter-control { grid-column: 1; }
+  .toolbar .icon-button { grid-column: 2; grid-row: 3; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -75,6 +75,54 @@ public class ErumiChatServiceTests : IDisposable
     }
 
     [Theory]
+    [InlineData("Xin chào, phân tích workspace hiện tại")]
+    [InlineData("Không tạo Project; hãy phân tích tình hình workspace")]
+    [InlineData("Don't create tasks; summarize workspace progress")]
+    [InlineData("Không giao task, chỉ tóm tắt workspace")]
+    [InlineData("Phân tích task đào tạo nhân sự")]
+    public async Task ChatFastAsync_ReadPromptsReachCanonicalAnalyticsInsteadOfGreetingOrMutation(string message)
+    {
+        _analyticsServiceMock.Setup(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new WorkspaceAnalyticsDto(4, 3, 24, 6, 18)));
+        _projectServiceMock.Setup(service => service.GetAllAsync(1, 100, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new PagedResult<ProjectDto>
+                { Items = [], TotalCount = 0, PageNumber = 1, PageSize = 100 }));
+
+        var result = await _service.ChatFastAsync(new ErumiChatRequestDto(message, ProjectId: null));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Intent.Should().NotBe("greeting");
+        result.Data.Intent.Should().NotBe("write_intent");
+        result.Data.UsedAi.Should().BeFalse();
+        result.Data.Sources.Should().Contain("AnalyticsService");
+        _analyticsServiceMock.Verify(service => service.GetWorkspaceAnalyticsAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _taskServiceMock.VerifyNoOtherCalls();
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("Phân tích Project chi tiết, không cần biểu đồ", true, false)]
+    [InlineData("Phân tích Project chi tiết, không cần bảng", false, true)]
+    [InlineData("Tóm tắt ngắn gọn, kèm số liệu và bảng so sánh", true, false)]
+    public async Task ChatFastAsync_RespectsEachPresentationChoiceIndependently(string message, bool tables, bool charts)
+    {
+        var projectId = Guid.NewGuid();
+        SetupProjectAiContext(projectId, Guid.NewGuid());
+        _analyticsServiceMock.Setup(service => service.GetProjectAnalyticsAsync(projectId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new ProjectAnalyticsDto(4, 1, 1, 1, 16, 4,
+                [new MemberProductivityDto(Guid.NewGuid(), "Thành viên kiểm thử", 4, 1, 4)], [])));
+        var result = await _service.ChatFastAsync(new ErumiChatRequestDto(message, projectId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Metrics.Should().NotBeEmpty();
+        result.Data.Tables.Any().Should().Be(tables);
+        result.Data.Charts.Any().Should().Be(charts);
+        if (tables)
+            result.Data.Tables.Single(table => table.Title == "Task theo trạng thái").Rows
+                .Sum(row => Convert.ToInt32(row["tasks"], CultureInfo.InvariantCulture)).Should().Be(4);
+        _aiGatewayMock.VerifyNoOtherCalls();
+    }
+
+    [Theory]
     [InlineData("Bạn có thể giúp cho tôi những gì?")]
     [InlineData("Tôi có thể hỏi gì?")]
     [InlineData("Nên bắt đầu từ đâu với trợ lý AI?")]

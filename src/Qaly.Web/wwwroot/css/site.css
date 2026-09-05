@@ -1098,6 +1098,61 @@ li {
   backdrop-filter: none !important;
 }
 
+/* Password recovery uses the same split-screen visual language as login. */
+.recovery-page .auth-side-form {
+  padding: clamp(24px, 4vw, 72px);
+  background: #fff;
+}
+.recovery-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 32px;
+  color: var(--text-secondary, #52627a);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.recovery-back:hover { color: #2563eb; }
+.recovery-back:focus-visible, .recovery-page a:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+}
+.recovery-notice, .recovery-result {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid var(--border, #dfe7f4);
+  border-radius: 12px;
+  background: var(--surface-muted, #f1f5f9);
+  color: var(--text-primary, #172033);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.recovery-notice p, .recovery-result p { margin: 6px 0 0; }
+.recovery-page .auth-form { gap: 10px; }
+.recovery-page .auth-form button { margin-top: 10px; }
+.recovery-page textarea {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border-strong, #cbd5e1);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #172033);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.recovery-page textarea:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.recovery-validation { color: #b91c1c; font-size: 13px; }
+.recovery-validation:empty { display: none; }
+.recovery-copy-status { color: var(--text-secondary, #52627a); font-size: 13px; line-height: 1.5; }
+.recovery-page .recovery-hint { display: grid; gap: 6px; text-align: left; margin-top: 28px; }
+@media (max-width: 640px) {
+  .recovery-page .auth-side-form { padding: 28px 24px; }
+  .recovery-back { margin-bottom: 24px; }
+}
+
 /* Dark theme for Razor authentication and access-state pages. */
 :root[data-theme='dark'] .auth-page,
 :root[data-theme='dark'] .login-page,

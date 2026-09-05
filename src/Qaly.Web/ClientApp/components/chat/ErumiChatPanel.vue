@@ -24,6 +24,8 @@ import { apiFetch, apiJson, apiResult } from '../../utils/api-client'
 import { showError, showInfo, showSuccess } from '../../composables/use-toast'
 import { normalizeAssistantProjectTarget, resolveAssistantProjectId, resolveAssistantRouteEntity } from './assistant-project-context'
 import { cloneAssistantJson } from './assistant-render-normalization'
+import { editLaunchStaffing, normalizeLaunchStaffing, selectLaunchStaffing, type LaunchStaffingDraftMember } from './project-launch-staffing'
+import { PROJECT_ROLE_OPTIONS, type ProjectRoleOption } from '../../utils/project-roles'
 import {
   applyLaunchMetricDefaults,
   launchMetricIntentLabel,
@@ -370,6 +372,7 @@ type ProjectStaffingCandidate = {
   timeZoneId: string
   capacityState: string
   weeklyCapacity?: ProjectWeeklyCapacity[] | null
+  professionalProfiles?: string[] | null
 }
 type ProjectStaffingScenario = {
   scenarioId: string
@@ -440,7 +443,7 @@ type ProjectLaunchDeliveryPlan = {
 
 type ProjectLaunchPlanDraft = {
   selectedScenarioId: string
-  staffing: Array<{ userId: string; proposedRole: string; proposedHours: number; included: boolean; manager: boolean }>
+  staffing: LaunchStaffingDraftMember[]
   sprints: ProjectLaunchSprintPlan[]
   assignmentMode: 'auto_balance' | 'preserve_assignments'
   scheduleMode: 'sequential_sprints' | 'parallel_workstreams'
@@ -493,6 +496,17 @@ type ProjectLaunchPlan = {
   executionReceipt?: ProjectLaunchExecutionReceipt | null
   latestReplanProposal?: ProjectReplanProposal | null
 }
+
+type ProjectRoleDefinition = {
+  key: string
+  displayName: string
+  description?: string | null
+  baseRole: string
+  baseRoleLabel: string
+  isActive: boolean
+}
+
+type LaunchRoleOption = ProjectRoleOption & { isCustom?: boolean }
 
 type AiAssistantCapabilityDescriptor = {
   capabilityId: string
@@ -936,6 +950,8 @@ const rulebookDrafts = ref<Record<string, OrganizationWorkRuleSet>>({})
 const rulebookReviewRules = ref<Record<string, OrganizationWorkRule[]>>({})
 const projectLaunchBriefDrafts = ref<Record<string, ProjectLaunchBriefDraft>>({})
 const projectLaunchPlanDrafts = ref<Record<string, ProjectLaunchPlanDraft>>({})
+const launchRoleOptionsByOrganization = ref<Record<string, LaunchRoleOption[]>>({})
+const launchRoleOptionLoads = new Set<string>()
 const projectLaunchDraftsHydrated = ref(false)
 const PROJECT_LAUNCH_DRAFT_BACKUP_VERSION = 1
 
@@ -1011,7 +1027,9 @@ function restoreProjectLaunchWorkingDrafts() {
       ? Object.fromEntries(Object.entries(saved.briefDrafts).map(([id, draft]) => [id, normalizeLaunchBriefForEditing(draft)]))
       : {}
     projectLaunchPlanDrafts.value = saved.planDrafts && typeof saved.planDrafts === 'object'
-      ? saved.planDrafts
+      ? Object.fromEntries(Object.entries(saved.planDrafts).map(([id, draft]) => [
+          id, { ...draft, staffing: normalizeLaunchStaffing(draft.staffing) },
+        ]))
       : {}
     if (assistantSessionId.value && restoredKey !== projectLaunchDraftBackupKey()) {
       persistProjectLaunchWorkingDrafts()
@@ -2850,6 +2868,17 @@ function canExecuteProjectLaunch(entry: ChatEntry) {
   return hasAssistantCapability(entry, 'project.launch.execute.v1')
 }
 
+const currentSystemRoleLabel = computed(() => {
+  const normalized = String(currentUser.value?.role || 'Member').trim().toLowerCase()
+  if (normalized === 'admin') return 'Admin'
+  if (normalized === 'moderator') return 'Moderator'
+  return 'Member'
+})
+
+function submitRoleSafePrompt(prompt: string) {
+  void submitChat(prompt)
+}
+
 function allLaunchCandidates(plan?: ProjectLaunchPlan | null) {
   if (!plan) return []
   const candidates = new Map<string, ProjectStaffingCandidate>()
@@ -2878,7 +2907,8 @@ function clearLaunchTaskAssignments(sprints: ProjectLaunchSprintPlan[]) {
   }))
 }
 
-function applyLaunchTeamSelection(plan: ProjectLaunchPlan, mode: 'recommended' | 'all' | 'none') {
+async function applyLaunchTeamSelection(entry: ChatEntry, plan: ProjectLaunchPlan, mode: 'recommended' | 'all' | 'none') {
+  const shouldReviewImmediately = mode === 'recommended'
   const draft = launchPlanDraft(plan)
   const candidates = allLaunchCandidates(plan)
     .filter(item => item.staffingEligible && !item.hardRejects?.length && item.availableHours > 0)
@@ -2904,7 +2934,11 @@ function applyLaunchTeamSelection(plan: ProjectLaunchPlan, mode: 'recommended' |
           dirty: true,
         },
       }
-      focusLaunchTarget(`launch-plan-save-${plan.planId}`)
+      if (shouldReviewImmediately) {
+        showInfo('Đã áp dụng đội hình Qaly đề cử. Đang kiểm tra lại capacity, vai trò và lịch…')
+        await nextTick()
+        await saveLaunchPlanReview(entry, plan)
+      }
       return
     }
     // A previously stored artifact may not yet have a feasible canned
@@ -2916,14 +2950,11 @@ function applyLaunchTeamSelection(plan: ProjectLaunchPlan, mode: 'recommended' |
   const manager = candidates.filter(item => item.managerEligible)
     .sort((left, right) => left.loadAfterPercent - right.loadAfterPercent || right.evidenceSkills.length - left.evidenceSkills.length)[0]
   const includedIds = new Set(mode === 'all' ? candidates.map(item => item.userId) : [])
-  const staffing = draft.staffing.map(item => {
+  const staffing = selectLaunchStaffing(draft.staffing, includedIds, manager?.userId).map(item => {
     const candidate = candidates.find(candidate => candidate.userId === item.userId)
-    const included = includedIds.has(item.userId)
     return {
       ...item,
-      included,
-      manager: included && item.userId === manager?.userId,
-      proposedHours: included && candidate
+      proposedHours: item.included && candidate
         ? Math.max(1, Math.min(candidate.availableHours, item.proposedHours || candidate.availableHours))
         : item.proposedHours,
     }
@@ -2938,19 +2969,25 @@ function applyLaunchTeamSelection(plan: ProjectLaunchPlan, mode: 'recommended' |
       dirty: true,
     },
   }
-  focusLaunchTarget(`launch-plan-save-${plan.planId}`)
+  if (shouldReviewImmediately) {
+    showInfo('Đã chọn toàn bộ thành viên hợp lệ thay cho phương án cũ. Đang kiểm tra lại trên máy chủ…')
+    await nextTick()
+    await saveLaunchPlanReview(entry, plan)
+  } else {
+    focusLaunchTarget(`launch-plan-save-${plan.planId}`)
+  }
 }
 
-function autoSelectLaunchTeam(plan: ProjectLaunchPlan) {
-  applyLaunchTeamSelection(plan, 'recommended')
+function autoSelectLaunchTeam(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  void applyLaunchTeamSelection(entry, plan, 'recommended')
 }
 
-function selectAllEligibleLaunchTeam(plan: ProjectLaunchPlan) {
-  applyLaunchTeamSelection(plan, 'all')
+function selectAllEligibleLaunchTeam(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  void applyLaunchTeamSelection(entry, plan, 'all')
 }
 
-function clearLaunchTeam(plan: ProjectLaunchPlan) {
-  applyLaunchTeamSelection(plan, 'none')
+function clearLaunchTeam(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  void applyLaunchTeamSelection(entry, plan, 'none')
 }
 
 function keepLaunchBacklogUnassigned(plan: ProjectLaunchPlan) {
@@ -2979,7 +3016,7 @@ function createLaunchPlanDraft(plan: ProjectLaunchPlan, scenario: ProjectStaffin
   const memberMap = new Map(scenario.members.map(item => [item.userId, item]))
   return {
     selectedScenarioId: scenario.scenarioId,
-    staffing: allLaunchCandidates(plan).map(candidate => {
+    staffing: normalizeLaunchStaffing(allLaunchCandidates(plan).map(candidate => {
       const member = memberMap.get(candidate.userId)
       return {
         userId: candidate.userId,
@@ -2988,7 +3025,7 @@ function createLaunchPlanDraft(plan: ProjectLaunchPlan, scenario: ProjectStaffin
         included: Boolean(member),
         manager: scenario.managerUserId === candidate.userId,
       }
-    }),
+    })),
     sprints: cloneAssistantJson(plan.deliveryPlan.sprints || []),
     assignmentMode: plan.deliveryPlan.assignmentMode || 'auto_balance',
     scheduleMode: plan.deliveryPlan.scheduleMode || 'sequential_sprints',
@@ -3013,6 +3050,7 @@ function updateLaunchPlanMode(
 }
 
 function launchPlanDraft(plan: ProjectLaunchPlan) {
+  void ensureLaunchRoleOptions(plan.organizationId)
   const existing = projectLaunchPlanDrafts.value[plan.planId]
   if (existing) return existing
   const scenarioId = selectedLaunchScenarioId(plan)
@@ -3020,6 +3058,52 @@ function launchPlanDraft(plan: ProjectLaunchPlan) {
   const draft = createLaunchPlanDraft(plan, scenario)
   projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: draft }
   return draft
+}
+
+function projectRoleGroup(baseRole: string): ProjectRoleOption['group'] {
+  return PROJECT_ROLE_OPTIONS.find(option => option.value.toLowerCase() === baseRole.toLowerCase())?.group || 'Chuyên môn'
+}
+
+async function ensureLaunchRoleOptions(organizationId: string) {
+  if (!organizationId || launchRoleOptionsByOrganization.value[organizationId] || launchRoleOptionLoads.has(organizationId)) return
+  launchRoleOptionLoads.add(organizationId)
+  try {
+    const definitions = await apiResult<ProjectRoleDefinition[]>(`/api/organizations/${organizationId}/role-definitions`)
+    launchRoleOptionsByOrganization.value = {
+      ...launchRoleOptionsByOrganization.value,
+      [organizationId]: [
+        ...PROJECT_ROLE_OPTIONS,
+        ...definitions.filter(item => item.isActive).map(item => ({
+          value: item.key,
+          label: item.displayName,
+          hint: item.description || `Kế thừa quyền ${item.baseRoleLabel}.`,
+          group: projectRoleGroup(item.baseRole),
+          isCustom: true,
+        })),
+      ],
+    }
+  } catch {
+    // The server remains the authorization boundary. Built-ins keep the editor usable if the
+    // optional custom-role catalogue cannot be read in this session.
+    launchRoleOptionsByOrganization.value = {
+      ...launchRoleOptionsByOrganization.value,
+      [organizationId]: [...PROJECT_ROLE_OPTIONS],
+    }
+  } finally {
+    launchRoleOptionLoads.delete(organizationId)
+  }
+}
+
+function launchRoleGroups(plan: ProjectLaunchPlan, member: LaunchStaffingDraftMember) {
+  if (member.manager) {
+    const manager: LaunchRoleOption = PROJECT_ROLE_OPTIONS.find(option => option.value === 'Manager')!
+    return [{ group: manager.group, options: [manager] }]
+  }
+  const options: LaunchRoleOption[] = (launchRoleOptionsByOrganization.value[plan.organizationId] || [...PROJECT_ROLE_OPTIONS])
+    .filter(option => option.value !== 'Manager')
+  return ['Quản lý', 'Chuyên môn', 'Cơ bản', 'Chỉ đọc']
+    .map(group => ({ group, options: options.filter(option => option.group === group) }))
+    .filter(group => group.options.length)
 }
 
 function updateLaunchStaffing(
@@ -3033,10 +3117,7 @@ function updateLaunchStaffing(
   const value = field === 'included' || field === 'manager'
     ? (input as HTMLInputElement).checked
     : field === 'proposedHours' ? Number(input.value) : input.value
-  const staffing = draft.staffing.map(item => {
-    if (item.userId !== userId) return field === 'manager' ? { ...item, manager: false } : item
-    return { ...item, [field]: value, included: field === 'manager' && value ? true : item.included }
-  })
+  const staffing = editLaunchStaffing(draft.staffing, userId, field, value)
   projectLaunchPlanDrafts.value = { ...projectLaunchPlanDrafts.value, [plan.planId]: { ...draft, staffing, dirty: true } }
 }
 
@@ -3217,7 +3298,7 @@ async function saveLaunchPlanReview(entry: ChatEntry, plan: ProjectLaunchPlan) {
       body: JSON.stringify({
         expectedRevision: plan.rowRevision,
         selectedScenarioId: draft.selectedScenarioId,
-        staffing: draft.staffing,
+        staffing: normalizeLaunchStaffing(draft.staffing),
         sprints: draft.sprints,
         assignmentMode: draft.assignmentMode,
         scheduleMode: draft.scheduleMode,
@@ -3658,6 +3739,12 @@ function launchPlanGuidanceItems(entry: ChatEntry, plan: ProjectLaunchPlan): Lau
   const items: LaunchGuidanceItem[] = []
   if (!canExecuteProjectLaunch(entry)) items.push({ key: 'permission', label: 'Thiếu quyền tạo Project', description: 'Bạn vẫn có thể xem và chỉnh phương án; Owner/Manager tổ chức phải xác nhận.', targetId: `launch-plan-header-${plan.planId}`, actionLabel: 'Xem quyền cần thiết' })
   if (launchPlanDraft(plan).dirty) items.push({ key: 'save', label: 'Thay đổi chưa được kiểm tra lại', description: 'Lưu để máy chủ kiểm tra lại kỹ năng, capacity, lịch và dependency.', targetId: `launch-plan-save-${plan.planId}`, actionLabel: 'Đi tới nút lưu' })
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === selectedLaunchScenarioId(plan))
+  if (!scenario) {
+    items.push({ key: 'scenario', label: 'Phương án nhân sự chưa tồn tại', description: 'Chọn đội hình Qaly đề cử để tạo lại một phương án có thể kiểm tra.', targetId: `launch-plan-auto-team-${plan.planId}`, actionLabel: 'Dùng đội hình đề cử' })
+  } else if (!scenario.feasible || scenario.blockingReasons.length) {
+    items.push({ key: 'scenario', label: 'Phương án nhân sự chưa khả thi', description: scenario.blockingReasons[0] || 'Đội hình hiện tại chưa vượt kiểm tra skill, capacity và lịch theo tuần.', targetId: `launch-plan-auto-team-${plan.planId}`, actionLabel: 'Chọn và kiểm tra lại đội hình' })
+  }
   const groups = new Map<string, LaunchGuidanceItem>()
   for (const reason of plan.blockingReasons) {
     const normalized = reason.toLocaleLowerCase('vi-VN')
@@ -3674,6 +3761,13 @@ function launchPlanGuidanceItems(entry: ChatEntry, plan: ProjectLaunchPlan): Lau
     if (!groups.has(guidance.key)) groups.set(guidance.key, guidance)
   }
   return [...items, ...groups.values()]
+}
+
+function canConfirmLaunchPlan(entry: ChatEntry, plan: ProjectLaunchPlan) {
+  if (!canExecuteProjectLaunch(entry) || plan.executionReceipt || launchPlanDraft(plan).dirty) return false
+  if (plan.state === 'executing' || plan.blockingReasons.length) return false
+  const scenario = plan.staffingScenarios.find(item => item.scenarioId === selectedLaunchScenarioId(plan))
+  return Boolean(scenario?.feasible && !scenario.blockingReasons.length)
 }
 
 function launchAssignmentModeDescription(mode: ProjectLaunchPlanDraft['assignmentMode']) {
@@ -3844,9 +3938,10 @@ async function refreshCreatedProjectContext(plan: ProjectLaunchPlan) {
 async function confirmLaunchPlan(entry: ChatEntry, plan: ProjectLaunchPlan) {
   if (launchActionBusy.value) return
   const scenarioId = selectedLaunchScenarioId(plan)
-  const scenario = plan.staffingScenarios.find(item => item.scenarioId === scenarioId)
-  if (!scenario?.feasible || scenario.blockingReasons.length || plan.blockingReasons.length) {
-    showError('Hãy chọn một phương án khả thi và xử lý toàn bộ blocking decision trước khi xác nhận.')
+  if (!canConfirmLaunchPlan(entry, plan)) {
+    const first = launchPlanGuidanceItems(entry, plan)[0]
+    showError(first ? `${first.label}: ${first.description}` : 'Phương án chưa vượt kiểm tra cuối cùng trên máy chủ.')
+    if (first) focusLaunchTarget(first.targetId)
     return
   }
   if (!window.confirm(`Xác nhận tạo Project "${plan.deliveryPlan.proposedProjectName}" cùng members, Sprints, Tasks và dependencies đã hiển thị?`)) return
@@ -5042,7 +5137,25 @@ onBeforeUnmount(() => {
                   </article>
 
                   <article
-                    v-if="msg.projectLaunchBrief"
+                    v-if="(msg.projectLaunchBrief || msg.projectLaunchPlan) && !canManageProjectLaunch(msg)"
+                    class="assistant-role-boundary-card"
+                    data-testid="project-launch-role-boundary"
+                  >
+                    <div class="assistant-role-boundary-icon"><ShieldCheck :size="23" /></div>
+                    <div>
+                      <span>Phạm vi của {{ currentSystemRoleLabel }}</span>
+                      <h3>{{ currentSystemRoleLabel }} không có quyền lập đội hình hoặc tạo Project trong tổ chức này</h3>
+                      <p>Qaly đã dừng trước bước tạo dữ liệu. Bạn vẫn có thể dùng Trợ lý AI cho công việc thuộc phạm vi của mình:</p>
+                      <div class="assistant-role-boundary-actions">
+                        <button type="button" @click="submitRoleSafePrompt('Tóm tắt các task tôi cần ưu tiên hôm nay')">Việc cần ưu tiên</button>
+                        <button type="button" @click="submitRoleSafePrompt('Cho tôi biết các blocker của những task được giao cho tôi')">Blocker của tôi</button>
+                        <button type="button" @click="submitRoleSafePrompt('Tóm tắt tiến độ project đang chọn theo phạm vi tôi được xem')">Tóm tắt Project</button>
+                      </div>
+                    </div>
+                  </article>
+
+                  <article
+                    v-else-if="msg.projectLaunchBrief"
                     class="project-launch-brief-card"
                     data-testid="project-launch-brief"
                   >
@@ -5300,7 +5413,7 @@ onBeforeUnmount(() => {
                   </article>
 
                   <article
-                    v-if="msg.projectLaunchPlan"
+                    v-if="msg.projectLaunchPlan && canManageProjectLaunch(msg)"
                     class="project-launch-plan-card"
                     data-testid="project-launch-plan"
                   >
@@ -5400,9 +5513,9 @@ onBeforeUnmount(() => {
                         <header><h5>Chọn và chỉnh đội hình</h5><span>{{ launchPlanDraft(msg.projectLaunchPlan).staffing.filter(item => item.included).length }} người đang chọn</span></header>
                         <p>Chọn nhanh để Qaly ghép người thực hiện + reviewer theo bằng chứng kỹ năng, rồi kiểm tra availability, tải đa dự án và capacity từng tuần. Bạn vẫn có thể đổi từng người bên dưới.</p>
                         <div :id="`launch-plan-auto-team-${msg.projectLaunchPlan.planId}`" class="launch-staffing-quick-actions">
-                          <button type="button" class="launch-primary-action" @click="autoSelectLaunchTeam(msg.projectLaunchPlan)">Dùng đội hình Qaly đề cử</button>
-                          <button type="button" class="secondary-button" @click="selectAllEligibleLaunchTeam(msg.projectLaunchPlan)">Chọn tất cả người hợp lệ</button>
-                          <button type="button" class="secondary-button" @click="clearLaunchTeam(msg.projectLaunchPlan)">Bỏ chọn tất cả</button>
+                          <button type="button" class="launch-primary-action" :disabled="Boolean(launchActionBusy)" @click="autoSelectLaunchTeam(msg, msg.projectLaunchPlan)">{{ launchActionBusy === `review:${msg.projectLaunchPlan.planId}` ? 'Đang áp dụng và kiểm tra…' : 'Dùng đội hình Qaly đề cử' }}</button>
+                          <button type="button" class="secondary-button" :disabled="Boolean(launchActionBusy)" @click="selectAllEligibleLaunchTeam(msg, msg.projectLaunchPlan)">Chọn tất cả người hợp lệ</button>
+                          <button type="button" class="secondary-button" :disabled="Boolean(launchActionBusy)" @click="clearLaunchTeam(msg, msg.projectLaunchPlan)">Bỏ chọn tất cả</button>
                           <button type="button" class="secondary-button" @click="keepLaunchBacklogUnassigned(msg.projectLaunchPlan)">Giữ việc chưa giao ở backlog</button>
                           <small><strong>Qaly đề cử</strong> dựa trên chức năng/Task của Launch Brief, bằng chứng kỹ năng, availability, tải đa dự án và capacity theo tuần; không phải đội hình seed cố định. “Chọn tất cả” chỉ lấy người đã vượt hard constraints. Mọi lựa chọn chỉ có hiệu lực sau khi bấm lưu và máy chủ kiểm tra lại.</small>
                         </div>
@@ -5415,8 +5528,12 @@ onBeforeUnmount(() => {
                             <label class="launch-member-picker"><input type="checkbox" :checked="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'included', $event)"> <strong>{{ candidate.displayName }}</strong></label>
                             <small>{{ candidate.organizationRole || 'Thành viên' }} · còn {{ (candidate.availableHours ?? 0).toFixed(0) }}h trong toàn kỳ · tuần khả dụng thấp nhất {{ Math.min(...(candidate.weeklyCapacity || []).map(week => week.effectiveAvailableHours), candidate.availableHours ?? 0).toFixed(0) }}h · {{ candidate.activeProjectCount ?? 0 }} dự án</small>
                             <label :title="candidate.managerEligible ? 'Chọn làm quản lý dự án' : 'Role tổ chức hiện tại không đủ quyền làm quản lý'">Quản lý <input type="radio" :name="`custom-manager-${msg.projectLaunchPlan.planId}`" :checked="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.manager" :disabled="!candidate.managerEligible" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'manager', $event)"></label>
-                            <label>Vai trò<select :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedRole || 'Member'" :disabled="!launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedRole', $event)"><option value="Member">Thành viên</option><option value="Developer">Phát triển</option><option value="Tester">Kiểm thử</option><option value="Reviewer">Review</option></select></label>
-                            <label>Số giờ dành cho dự án<input type="number" min="1" :max="candidate.availableHours" :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedHours || Math.min(8, candidate.availableHours || 0)" :disabled="!launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included" @input="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedHours', $event)"></label>
+                            <label>Vai trò trong Project<select :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedRole || 'Member'" :disabled="!launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included || launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.manager" :title="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.manager ? 'Vai trò quản lý được đặt theo lựa chọn Quản lý ở trên. Chọn người quản lý khác để đổi vai trò người này.' : 'Đồng bộ từ catalog vai trò dự án của tổ chức'" @change="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedRole', $event)"><optgroup v-for="group in launchRoleGroups(msg.projectLaunchPlan, launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)!)" :key="group.group" :label="group.group"><option v-for="role in group.options" :key="role.value" :value="role.value" :title="role.hint">{{ role.label }}{{ role.isCustom ? ' · tổ chức' : '' }}</option></optgroup></select></label>
+                            <label class="launch-hours-field">
+                              <span>Số giờ dành cho dự án<small v-if="launchPlanDraft(msg.projectLaunchPlan).assignmentMode === 'auto_balance'">Qaly tính từ Task và lịch Sprint</small></span>
+                              <input type="number" min="1" :max="candidate.availableHours" :value="launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.proposedHours || Math.min(8, candidate.availableHours || 0)" :disabled="!launchPlanDraft(msg.projectLaunchPlan).staffing.find(item => item.userId === candidate.userId)?.included || launchPlanDraft(msg.projectLaunchPlan).assignmentMode === 'auto_balance'" :title="launchPlanDraft(msg.projectLaunchPlan).assignmentMode === 'auto_balance' ? 'Allocation thực tế được Qaly tính lại từ các Task đã chọn và capacity từng tuần.' : 'Giới hạn allocation đã review cho chế độ giữ phân công.'" @input="updateLaunchStaffing(msg.projectLaunchPlan, candidate.userId, 'proposedHours', $event)">
+                            </label>
+                            <small v-if="candidate.professionalProfiles?.length" class="launch-professional-profiles"><strong>Năng lực nghề nghiệp đã xác minh:</strong> {{ candidate.professionalProfiles.join(', ') }}</small>
                             <small v-if="candidate.hardRejects?.length">Chưa thể chọn: {{ (candidate.hardRejects || []).map(staffingRejectLabel).join(', ') }}</small>
                           </article>
                         </div>
@@ -5513,12 +5630,15 @@ onBeforeUnmount(() => {
                         v-if="!msg.projectLaunchPlan.executionReceipt"
                         type="button"
                         class="launch-primary-action"
-                        :disabled="Boolean(launchActionBusy) || !canExecuteProjectLaunch(msg) || launchPlanDraft(msg.projectLaunchPlan).dirty || msg.projectLaunchPlan.state === 'executing' || Boolean(msg.projectLaunchPlan.blockingReasons.length)"
+                        :disabled="Boolean(launchActionBusy) || !canConfirmLaunchPlan(msg, msg.projectLaunchPlan)"
                         :title="launchPlanGuidanceItems(msg, msg.projectLaunchPlan).map(item => item.label).join(' · ') || 'Đủ điều kiện để tạo Project thật'"
                         data-testid="project-launch-confirm"
                         @click="confirmLaunchPlan(msg, msg.projectLaunchPlan)"
                       >{{ launchActionBusy === msg.projectLaunchPlan.planId || msg.projectLaunchPlan.state === 'executing' ? 'Đang hoàn tất Project…' : 'Xác nhận tạo Project' }}</button>
-                      <button v-if="!msg.projectLaunchPlan.executionReceipt && launchPlanGuidanceItems(msg, msg.projectLaunchPlan).length" type="button" class="launch-unlock-link" @click="focusLaunchTarget(launchPlanGuidanceItems(msg, msg.projectLaunchPlan)[0].targetId)">Vì sao đang khóa? Xử lý mục đầu tiên →</button>
+                      <button v-if="!msg.projectLaunchPlan.executionReceipt && launchPlanGuidanceItems(msg, msg.projectLaunchPlan).length" type="button" class="launch-confirm-blocker" @click="focusLaunchTarget(launchPlanGuidanceItems(msg, msg.projectLaunchPlan)[0].targetId)">
+                        <span><strong>{{ launchPlanGuidanceItems(msg, msg.projectLaunchPlan)[0].label }}</strong><small>{{ launchPlanGuidanceItems(msg, msg.projectLaunchPlan)[0].description }}</small></span>
+                        <b>{{ launchPlanGuidanceItems(msg, msg.projectLaunchPlan)[0].actionLabel }} →</b>
+                      </button>
                       <template v-if="msg.projectLaunchPlan.executionReceipt">
                         <button type="button" :disabled="Boolean(launchActionBusy)" data-testid="project-launch-monitor" @click="monitorLaunch(msg, msg.projectLaunchPlan)">Kiểm tra tình trạng</button>
                         <button
@@ -7982,6 +8102,23 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.assistant-role-boundary-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 94%, var(--primary) 6%), var(--surface));
+}
+.assistant-role-boundary-icon { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 13px; color: var(--primary); background: color-mix(in srgb, var(--surface) 80%, var(--primary) 20%); }
+.assistant-role-boundary-card span { color: var(--primary); font-size: 11px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+.assistant-role-boundary-card h3 { margin: 3px 0 5px; color: var(--text); font-size: 15px; }
+.assistant-role-boundary-card p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.assistant-role-boundary-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.assistant-role-boundary-actions button { border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border)); border-radius: 999px; padding: 7px 10px; color: var(--primary); background: var(--surface); font-size: 11px; font-weight: 750; cursor: pointer; }
+.assistant-role-boundary-actions button:hover { background: color-mix(in srgb, var(--surface) 88%, var(--primary) 12%); }
+
 .project-launch-brief-header,
 .assistant-progressive-questions > header,
 .assistant-manual-guidance > header {
@@ -8187,6 +8324,11 @@ onBeforeUnmount(() => {
 .launch-blocking-list details { margin-top: 8px; }
 .launch-blocking-list details > summary { cursor: pointer; font-weight: 700; }
 .launch-unlock-link { border: 0 !important; background: none !important; color: var(--primary) !important; padding: 4px !important; cursor: pointer; font-weight: 700; }
+.launch-confirm-blocker { display:flex!important; align-items:center; justify-content:space-between; gap:10px; min-width:min(100%,420px); padding:8px 10px!important; border:1px solid #fbbf24!important; border-radius:10px!important; background:#fffbeb!important; color:#92400e!important; text-align:left; cursor:pointer; }
+.launch-confirm-blocker > span { display:grid; gap:2px; min-width:0; }
+.launch-confirm-blocker strong { font-size:11px; }
+.launch-confirm-blocker small { overflow:hidden; max-width:290px; color:#a16207!important; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.launch-confirm-blocker b { flex:0 0 auto; color:#b45309; font-size:10px; white-space:nowrap; }
 .launch-plan-section,
 .launch-receipt,
 .launch-replan { padding: 14px 16px; border-top: 1px solid var(--border); }
@@ -8208,7 +8350,11 @@ onBeforeUnmount(() => {
 .launch-staffing-editor article.rejected { border-color: #fecaca; background: color-mix(in srgb, var(--surface) 92%, #fef2f2 8%); }
 .launch-staffing-editor label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
 .launch-staffing-editor .launch-member-picker { justify-content: flex-start; font-size: 12px; cursor: pointer; }
+.launch-staffing-editor .launch-hours-field > span { display:grid; gap:1px; }
+.launch-staffing-editor .launch-hours-field small { color:var(--muted); font-size:9px; }
 .launch-staffing-editor input[type="number"] { width: 78px; border: 1px solid var(--border); border-radius: 7px; padding: 5px 7px; }
+.launch-professional-profiles { padding: 6px 8px; border-radius: 7px; background: color-mix(in srgb, var(--primary) 7%, var(--surface)); color: var(--muted); line-height: 1.4; }
+.launch-professional-profiles strong { color: var(--text); }
 .launch-scenario { padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 96%, var(--muted) 4%); }
 .launch-scenario.feasible { border-color: #86efac; }
 .launch-scenario.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }

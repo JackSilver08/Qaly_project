@@ -112,7 +112,7 @@ public sealed class ErumiChatService : IErumiChatService
         }
 
         var normalized = Normalize(message);
-        var explicitlyReadOnlyOutcome = IsExplicitReadOnlyOutcomeQuery(normalized);
+        var explicitlyReadOnlyOutcome = AiAssistantCapabilityIntentClassifier.IsExplicitReadOnlyRequest(message);
         if (request.Files is { Count: > 0 })
         {
             return Result.Success(BuildUploadedFileResponse(request.Files, sw));
@@ -454,6 +454,28 @@ public sealed class ErumiChatService : IErumiChatService
                     IntentRouterSources));
             }
 
+            var taskPrompt = AiTaskPrompt.Parse(message);
+            var clarification = taskPrompt.ValidateAssignmentContent();
+            if (clarification == null && taskPrompt.Assignee != null)
+            {
+                var members = await _memberRepo.GetQueryable().AsNoTracking()
+                    .Where(member => member.ProjectId == projectId.Value && member.User.IsActive)
+                    .Select(member => new { member.UserId, member.User.FullName }).ToListAsync(ct);
+                clarification = AiTaskPrompt.ResolveAssignee(taskPrompt.Assignee,
+                    members.Select(member => (member.UserId, member.FullName))
+                        .Append((projectResult.Data.OwnerId, projectResult.Data.OwnerName))).Error;
+            }
+            if (clarification != null)
+            {
+                var guidance = CreateResponse(clarification, "task_request_clarification", Stopwatch.StartNew(),
+                    actions: [new ErumiActionDto("assistant_navigation", "Xem thành viên Project",
+                        new { route = $"/projects/{projectId.Value}?tab=members", description = "Kiểm tra họ tên đầy đủ rồi gửi lại nội dung task và người nhận." })],
+                    sources: IntentRouterSources, confidence: 1);
+                return Complete(new AiAssistantTurnResponseDto(AiAssistantTurnContract.SchemaId,
+                    "clarification_required", AiAssistantTurnContract.TaskCreateIntent, "none",
+                    clarification, 1, null, null, IntentRouterSources, guidance));
+            }
+
             return Complete(new AiAssistantTurnResponseDto(
                 AiAssistantTurnContract.SchemaId,
                 "registered_action",
@@ -792,99 +814,27 @@ public sealed class ErumiChatService : IErumiChatService
             var projectId = ResolveAssistantProjectId(request.Context);
             var taskId = string.Equals(request.Context?.EntityType, "task", StringComparison.OrdinalIgnoreCase)
                 ? request.Context?.EntityId
-                : request.Context?.SelectionIds?.Count > 0 ? request.Context.SelectionIds[0] : null;
-            if (!projectId.HasValue || !taskId.HasValue)
+                : request.Context?.SelectionIds is { Count: > 0 } ids ? ids[0] : (Guid?)null;
+            if (!projectId.HasValue)
             {
                 var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
                 return Result.Success(Attach(new AiAssistantTurnResponseDto(
-                    AiAssistantTurnContract.SchemaId,
-                    "clarification_required",
-                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
-                    "none",
-                    navigation.Data?.Reply ?? "Hãy mở Task cần phân công trước.",
+                    AiAssistantTurnContract.SchemaId, "clarification_required",
+                    AiAssistantTurnContract.TaskAssignmentScheduleIntent, "none",
+                    navigation.Data?.Reply ?? "Hãy chọn Project và Task cần phân công.",
                     1, null, null, [], navigation.Data)));
             }
-            if (_portfolioScheduleService == null)
-            {
-                var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
-                return Result.Success(Attach(new AiAssistantTurnResponseDto(
-                    AiAssistantTurnContract.SchemaId,
-                    "registered_action",
-                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
-                    "draft_then_confirm",
-                    navigation.Data?.Reply ?? "Mở Task để lập phương án phân công.",
-                    0.98,
-                    null,
-                    null,
-                    [$"/projects/{projectId.Value}/tasks/{taskId.Value}"],
-                    navigation.Data,
-                    ActualProvider: "Qaly",
-                    ActualModel: "assignment-navigation")));
-            }
-
-            var normalized = Normalize(request.Message);
-            var useCurrentDraft = ContainsAny(normalized, "giu phuong an", "phuong an hien tai", "xac nhan cuoi", "final confirm");
-            Result<PortfolioScheduleProposalDto> proposalResult;
-            if (useCurrentDraft)
-            {
-                proposalResult = await _portfolioScheduleService.GetLatestProposalForTaskAsync(projectId.Value, taskId.Value, ct);
-            }
-            else
-            {
-                var taskResult = await _taskService.GetByIdAsync(taskId.Value, ct);
-                if (!taskResult.IsSuccess || taskResult.Data == null || taskResult.Data.ProjectId != projectId.Value)
-                    return Result.NotFound<AiAssistantTurnResponseDto>();
-                var start = DateTimeOffset.UtcNow.Date;
-                var requestedEnd = taskResult.Data.DueDate.HasValue && taskResult.Data.DueDate.Value > start
-                    ? taskResult.Data.DueDate.Value
-                    : start.AddDays(14);
-                var end = requestedEnd <= start ? start.AddDays(14) : requestedEnd;
-                var idempotencyKey = $"assistant-assignment:{request.SessionId?.ToString("N") ?? "none"}:{request.ClientTurnId?.ToString("N") ?? taskId.Value.ToString("N")}";
-                proposalResult = await _portfolioScheduleService.CreateProposalAsync(
-                    projectId.Value,
-                    new CreatePortfolioScheduleProposalDto([taskId.Value], start, end),
-                    idempotencyKey,
-                    ct);
-            }
-
-            if (!proposalResult.IsSuccess || proposalResult.Data == null)
-            {
-                var blocked = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
-                var reason = proposalResult.Error ?? "Chưa có phương án phân công khả thi từ dữ liệu hiện tại.";
-                return Result.Success(Attach(new AiAssistantTurnResponseDto(
-                    AiAssistantTurnContract.SchemaId,
-                    "assignment_blocked",
-                    AiAssistantTurnContract.TaskAssignmentScheduleIntent,
-                    "none",
-                    $"Chưa thể lập phương án an toàn: {reason} Không có assignee hoặc deadline nào được thay đổi.",
-                    1, null, null, [], blocked.Data,
-                    ActualProvider: "LocalRules",
-                    ActualModel: PortfolioScheduleService.ScoringVersion)));
-            }
-
-            var proposal = proposalResult.Data;
-            var item = proposal.Items.Single();
-            var warning = item.DeadlineRisks.Count + item.DependencyConflicts.Count;
-            var message = useCurrentDraft
-                ? "Đây là phương án hiện tại để kiểm tra lần cuối. Chưa ghi dữ liệu; chỉ nút xác nhận trên card mới áp dụng assignee và lịch."
-                : $"Đã lập phương án cho Task “{item.TaskTitle}” từ required skill, evidence đã xác nhận, capacity, lịch vắng và tải đa dự án. Có {item.Alternatives.Count} ứng viên thay thế và {warning} cảnh báo cần xem; chưa ghi dữ liệu.";
-            return Result.Success(Attach(new AiAssistantTurnResponseDto(
-                AiAssistantTurnContract.SchemaId,
-                "assignment_schedule_proposal",
-                AiAssistantTurnContract.TaskAssignmentScheduleIntent,
-                "explicit_single_confirm",
-                message,
-                warning == 0 ? 0.95 : 0.8,
-                null, null, proposal.Sources.Select(source => source.Key).ToArray(),
-                ActualProvider: proposal.ProviderName,
-                ActualModel: proposal.ModelName,
-                PortfolioScheduleProposal: proposal)));
+            var response = await BuildAssignmentScheduleResponseAsync(request, projectId.Value, taskId ?? Guid.Empty, ct);
+            return response.IsSuccess && response.Data != null
+                ? Result.Success(Attach(response.Data)) : response;
         }
 
         if (planning.SelectedCapabilityId == AiAssistantContextContract.TaskCreateCapability)
         {
             var delegated = await AssistantTurnAsync(
-                request with { Message = $"Tạo task theo yêu cầu sau: {request.Message}" }, executionContext, ct);
+                IsRegisteredTaskCreateIntent(Normalize(request.Message))
+                    ? request
+                    : request with { Message = $"Tạo task theo yêu cầu sau: {request.Message}" }, executionContext, ct);
             if (!delegated.IsSuccess || delegated.Data == null) return delegated;
             var restored = delegated.Data with
             {
@@ -1362,7 +1312,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             UserId = _currentUserService.UserId,
             History = PruneChatHistory(request.History),
             UseCache = false,
-            Tools = request.AdvisoryOnly ? null : _aiTools?.GetAvailableTools()
+            Tools = request.AdvisoryOnly ? null : ReadOnlyConversationTools(_aiTools?.GetAvailableTools())
         };
 
         var aiResponse = await ExecuteAiAsync(aiRequest, ct);
@@ -1708,7 +1658,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             UserId = _currentUserService.UserId,
             History = PruneChatHistory(request.History),
             UseCache = false,
-            Tools = request.AdvisoryOnly ? null : tools
+            Tools = request.AdvisoryOnly ? null : ReadOnlyConversationTools(tools)
         };
 
         var aiResponse = await ExecuteAiAsync(aiRequest, ct);
@@ -2190,6 +2140,18 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             response.Confidence,
             provider,
             model);
+    }
+
+    internal static IList<AITool>? ReadOnlyConversationTools(IList<AITool>? tools)
+    {
+        if (tools == null) return null;
+        // RBAC permits an operation, but is not confirmation for this chat turn. All writes
+        // must go through the typed draft/review/confirmation contract, never raw chat tools.
+        string[] readTools = [nameof(AiTools.GetProjectSummary), nameof(AiTools.GetOverdueTasks),
+            nameof(AiTools.SuggestTaskAssignment), nameof(AiTools.GetMemberWorkload),
+            nameof(AiTools.SearchKnowledge), nameof(AiTools.GetMyTimeLogs)];
+        return tools.OfType<AIFunction>().Where(tool => readTools.Contains(tool.Name, StringComparer.Ordinal))
+            .Cast<AITool>().ToList();
     }
 
     internal async Task<System.Collections.Generic.IList<Microsoft.Extensions.AI.AITool>?> GetFilteredToolsForProjectAsync(
@@ -2883,10 +2845,6 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             sources: ConcatSources(ProjectSources, "TaskService")));
     }
 
-    private static bool IsExplicitReadOnlyOutcomeQuery(string normalized)
-        => ContainsAny(normalized, "chi xem", "khong thay doi du lieu", "khong ghi du lieu", "khong hien nut xac nhan mutation") ||
-           (ContainsAny(normalized, "neu toi khong co quyen", "khong co quyen") &&
-            ContainsAny(normalized, "van tra phan tich", "van tra loi", "van tom tat", "nut mo du lieu nguon"));
 
     private static bool IsMemberReadOnlyAcceptanceQuery(string normalized)
         => ContainsAny(normalized, "tai lieu toi duoc phep xem", "tai lieu duoc phep xem") &&
@@ -3136,7 +3094,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             new("Task đang mở", openTasks.ToString(CultureInfo.InvariantCulture), "neutral", $"{data.InProgressTasks} đang làm + {otherOpenTasks} chưa bắt đầu/khác"),
             new("Đang làm", data.InProgressTasks.ToString(CultureInfo.InvariantCulture), "neutral", $"Nằm trong {openTasks} task đang mở"),
             new("Quá hạn", data.OverdueTasks.ToString(CultureInfo.InvariantCulture), overdueTone, $"Là tập con của {openTasks} task đang mở, không cộng riêng"),
-            new("Giờ thực tế", $"{data.TotalActualHours:0.##}h", "neutral", data.TotalEstimatedHours > 0 ? $"{hourRatio:0.#}% so với ước tính" : null)
+            new("Giờ đã log", $"{data.TotalActualHours:0.##}h", "neutral", data.TotalEstimatedHours > 0 ? $"{hourRatio:0.#}% so với ước tính" : null)
         };
     }
 
@@ -3297,6 +3255,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "project_summary",
             sw,
             profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            tables: profile.IncludeTables ? BuildProjectOverviewTables(data) : null,
             charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
             actions: profile.IncludeActions ? SuggestedActions("Phân tích rủi ro", "Xem workload thành viên", "Liệt kê task quá hạn") : null,
             sources: ProjectSources,
@@ -3313,6 +3272,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "productivity",
             sw,
             profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            tables: profile.IncludeTables ? BuildProjectOverviewTables(data) : null,
             charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
             actions: profile.IncludeActions ? SuggestedActions("Lập bảng workload", "Ai đang quá tải?", "Liệt kê task quá hạn") : null,
             sources: ProjectSources,
@@ -3329,11 +3289,29 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "project_analysis",
             sw,
             profile.IncludeMetrics ? BuildProjectMetrics(data) : null,
+            tables: profile.IncludeTables ? BuildProjectOverviewTables(data) : null,
             charts: profile.IncludeCharts ? BuildProjectCharts(data) : null,
             actions: profile.IncludeActions ? SuggestedActions("Phân tích rủi ro", "Lập bảng workload", "Xuất báo cáo dự án") : null,
             sources: ProjectSources,
             confidence: ProjectDataConfidence(data),
             confidenceReason: BuildRealtimeReason());
+
+    private static ErumiTableDto[] BuildProjectOverviewTables(ProjectAnalyticsDto data)
+    {
+        var statuses = new[]
+        {
+            (Label: "Hoàn thành", Count: data.DoneTasks),
+            (Label: "Đang làm", Count: data.InProgressTasks),
+            (Label: "Chưa bắt đầu / trạng thái khác", Count: Math.Max(0, data.TotalTasks - data.DoneTasks - data.InProgressTasks))
+        };
+        return [new ErumiTableDto("Task theo trạng thái",
+            [new ErumiTableColumnDto("status", "Trạng thái"),
+             new ErumiTableColumnDto("tasks", "Số Task", "number", "right"),
+             new ErumiTableColumnDto("percent", "Tỷ lệ (%)", "number", "right")],
+            statuses.Select(item => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?>
+                { ["status"] = item.Label, ["tasks"] = item.Count, ["percent"] = Percent(item.Count, data.TotalTasks) }).ToArray(),
+            $"Tổng {data.TotalTasks} Task từ Analytics. Quá hạn ({data.OverdueTasks} Task) là điều kiện thời gian có thể trùng với các trạng thái, không cộng thêm vào tổng.")];
+    }
 
     private static List<ErumiMetricDto> BuildWorkspaceMetrics(
         WorkspaceAnalyticsDto data,
@@ -4014,6 +3992,23 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         Guid taskId,
         CancellationToken ct)
     {
+        var taskIds = (request.Context?.SelectionIds is { Count: > 0 } selected ? selected : [taskId])
+            .Where(id => id != Guid.Empty).Distinct().ToArray();
+        var requestedCount = AiActionComposerService.ExtractRequestedTaskCount(request.Message);
+        var taskPrompt = AiTaskPrompt.Parse(request.Message);
+        if (taskIds.Length == 0 || (requestedCount.HasValue && requestedCount != taskIds.Length) || taskPrompt.Error != null)
+        {
+            var reason = taskPrompt.Error ?? (requestedCount.HasValue
+                ? $"Bạn muốn giao {requestedCount} task có sẵn, nhưng hiện chọn {taskIds.Length}. Hãy chọn đúng {requestedCount} task ở tab Phân công & Capacity; Qaly không tự chọn thay và không tạo task mới."
+                : "Hãy mở hoặc chọn các task có sẵn cần giao. Nếu muốn tạo mới, hãy ghi rõ ‘Tạo task’ kèm nội dung công việc.");
+            var guidance = CreateResponse(reason, AiAssistantTurnContract.TaskAssignmentScheduleIntent, Stopwatch.StartNew(),
+                actions: [new ErumiActionDto("assistant_navigation", "Chọn task để phân công",
+                    new { route = $"/projects/{projectId}?tab=capacity", description = "Chọn đúng các task có sẵn và người nhận." })], confidence: 1);
+            return Result.Success(new AiAssistantTurnResponseDto(AiAssistantTurnContract.SchemaId,
+                "clarification_required", AiAssistantTurnContract.TaskAssignmentScheduleIntent, "none",
+                reason, 1, null, null, [], guidance));
+        }
+        taskId = taskIds[0];
         if (_portfolioScheduleService == null)
         {
             var navigation = BuildAssignmentNavigationResponse(projectId, taskId, Stopwatch.StartNew());
@@ -4053,7 +4048,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             var idempotencyKey = $"assistant-assignment:{request.SessionId?.ToString("N") ?? "none"}:{request.ClientTurnId?.ToString("N") ?? taskId.ToString("N")}";
             proposalResult = await _portfolioScheduleService.CreateProposalAsync(
                 projectId,
-                new CreatePortfolioScheduleProposalDto([taskId], start, end),
+                new CreatePortfolioScheduleProposalDto(taskIds, start, end, taskPrompt.Assignee),
                 idempotencyKey,
                 ct);
         }
@@ -4074,11 +4069,10 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
         }
 
         var proposal = proposalResult.Data;
-        var item = proposal.Items.Single();
-        var warningCount = item.DeadlineRisks.Count + item.DependencyConflicts.Count;
+        var warningCount = proposal.Items.Sum(row => row.DeadlineRisks.Count + row.DependencyConflicts.Count);
         var message = useCurrentDraft
             ? "Đây là phương án hiện tại để kiểm tra lần cuối. Chưa ghi dữ liệu; chỉ nút xác nhận trên card mới áp dụng assignee và lịch."
-            : $"Đã lập phương án cho Task “{item.TaskTitle}” từ required skill, evidence đã xác nhận, capacity, lịch vắng và tải đa dự án. Có {item.Alternatives.Count} ứng viên thay thế và {warningCount} cảnh báo cần xem; chưa ghi dữ liệu.";
+            : $"Đã lập phương án cho {proposal.Items.Count} Task từ required skill, evidence đã xác nhận, capacity, lịch vắng và tải đa dự án. Có {warningCount} cảnh báo cần xem; chưa ghi dữ liệu.";
         return Result.Success(new AiAssistantTurnResponseDto(
             AiAssistantTurnContract.SchemaId,
             "assignment_schedule_proposal",
@@ -4196,7 +4190,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
     private static LocalResponseProfile AnalyzeLocalResponseProfile(string normalized, string intent)
     {
         var wantsBrief = WantsBriefAnswer(normalized);
-        if (wantsBrief)
+        if (wantsBrief && !WantsTable(normalized) && !WantsChart(normalized) && !WantsMetrics(normalized))
         {
             return new LocalResponseProfile(
                 IncludeMetrics: false,
@@ -4206,7 +4200,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                 FullReport: false);
         }
 
-        var wantsFull = WantsFullReport(normalized) || intent.EndsWith("_analysis", StringComparison.OrdinalIgnoreCase) || intent == "project_analysis";
+        var wantsFull = !wantsBrief && (WantsFullReport(normalized) || intent.EndsWith("_analysis", StringComparison.OrdinalIgnoreCase) || intent == "project_analysis");
         var wantsTable = WantsTable(normalized);
         var wantsChart = WantsChart(normalized);
         var wantsMetrics = WantsMetrics(normalized);
@@ -4214,9 +4208,9 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
                                || intent.Contains("productivity", StringComparison.OrdinalIgnoreCase);
 
         return new LocalResponseProfile(
-            IncludeMetrics: wantsFull || wantsMetrics || analyticalIntent,
-            IncludeTables: wantsFull || wantsTable,
-            IncludeCharts: wantsFull || wantsChart,
+            IncludeMetrics: !ExcludesPresentation(normalized, "thong ke", "so lieu", "chi so", "metrics") && (wantsFull || wantsMetrics || analyticalIntent),
+            IncludeTables: !ExcludesPresentation(normalized, "bang", "table", "tables") && (wantsFull || wantsTable),
+            IncludeCharts: !ExcludesPresentation(normalized, "bieu do", "do thi", "chart", "charts") && (wantsFull || wantsChart),
             IncludeActions: true,
             FullReport: wantsFull);
     }
@@ -4228,11 +4222,11 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "noi ngan",
             "tra loi ngan",
             "tom tat nhanh",
-            "chi can",
-            "mot cau",
-            "khong can bieu do",
-            "khong can bang",
-            "khong can thong ke");
+            "mot cau");
+
+    private static bool ExcludesPresentation(string normalized, params string[] terms)
+        => terms.Any(term => AiPromptLanguage.ContainsAny(normalized,
+            $"khong can {term}", $"khong {term}", $"bo {term}", $"an {term}", $"no {term}", $"without {term}"));
 
     private static bool WantsFullReport(string normalized)
         => ContainsAny(
@@ -4247,7 +4241,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "insight day du");
 
     private static bool WantsMetrics(string normalized)
-        => ContainsAny(
+        => !ExcludesPresentation(normalized, "thong ke", "so lieu", "chi so", "metrics") && ContainsAny(
             normalized,
             "thong ke",
             "so lieu",
@@ -4262,7 +4256,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "phan tram");
 
     private static bool WantsChart(string normalized)
-        => ContainsAny(
+        => !ExcludesPresentation(normalized, "bieu do", "do thi", "chart", "charts") && ContainsAny(
             normalized,
             "bieu do",
             "do thi",
@@ -4274,7 +4268,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "ve hinh");
 
     private static bool WantsTable(string normalized)
-        => ContainsAny(
+        => !ExcludesPresentation(normalized, "bang", "table", "tables") && ContainsAny(
             normalized,
             "bang",
             "table",
@@ -4382,31 +4376,12 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
             "nguoi tao du an la ai");
 
     private static bool IsGreeting(string normalized)
-        => normalized is "hi" or "hello" or "xin chao" or "chao" or "chao ban"
-           || ContainsAny(normalized, "xin chao", "hello erumi", "chao erumi");
+        => normalized.Trim().TrimEnd('!', '.', '?') is
+            "hi" or "hello" or "xin chao" or "chao" or "chao ban" or "hello erumi" or "chao erumi";
 
     private static bool IsWriteIntent(string normalized)
     {
-        var hasTaskNoun = ContainsAny(normalized, "task", "cong viec", "nhiem vu");
-        var hasCreateVerb = ContainsAny(normalized, "tao", "them", "lap", "soan", "tach");
-        var hasAssignmentVerb = ContainsAny(normalized, "assign", "phan cong", "gan cho", "giao cho", "giao");
-
-        return ContainsAny(
-            normalized,
-            "tao task",
-            "them task",
-            "tao cong viec",
-            "them cong viec",
-            "cap nhat task",
-            "doi trang thai",
-            "chuyen trang thai",
-            "assign",
-            "phan cong",
-            "gan cho",
-            "giao task",
-            "giao cong viec",
-            "giao nhiem vu")
-            || (hasTaskNoun && (hasCreateVerb || hasAssignmentVerb));
+        return !AiAssistantCapabilityIntentClassifier.IsExplicitReadOnlyRequest(normalized);
     }
 
     private static bool IsRegisteredTaskCreateIntent(string normalized)
@@ -4431,69 +4406,17 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
     private static bool TryResolveUnsupportedMutation(string normalized, out string capability)
     {
-        // A project/group noun may only be context for a registered Task create request
-        // (for example: "tạo task cho dự án Alpha"). The registered noun must win before
-        // evaluating unsupported entity-creation adapters.
-        if (IsRegisteredTaskCreateIntent(normalized))
+        var inferred = AiAssistantCapabilityIntentClassifier.Infer(normalized);
+        // Legacy chat can only hand off these actions; the planned/session route owns cards.
+        capability = inferred switch
         {
-            capability = string.Empty;
-            return false;
-        }
-
-        // Keep this broad enough for "tạo một dự án", but do not treat analysis
-        // prompts such as "lập kế hoạch cải thiện dự án" as a create mutation.
-        // Direct "lập dự án/poll" and scheduling phrases remain covered below.
-        var hasCreateVerb = ContainsAny(normalized, "tao", "them");
-        if (hasCreateVerb && ContainsAny(normalized, "du an", "project"))
-        {
-            capability = "tạo dự án";
-            return true;
-        }
-
-        if (hasCreateVerb && ContainsAny(normalized, "nhom", "group", "team"))
-        {
-            capability = "tạo nhóm";
-            return true;
-        }
-
-        if (hasCreateVerb && ContainsAny(normalized, "cuoc hop", "lich hop", "meeting"))
-        {
-            capability = "tạo cuộc họp hoặc lịch";
-            return true;
-        }
-
-        if (hasCreateVerb && ContainsAny(normalized, "poll"))
-        {
-            capability = "tạo poll";
-            return true;
-        }
-
-        if (hasCreateVerb && ContainsAny(normalized, "form", "bieu mau", "quiz"))
-        {
-            capability = "tạo form hoặc quiz nhiều câu";
-            return true;
-        }
-
-        var candidates = new (string Capability, string[] Phrases)[]
-        {
-            ("tạo dự án", ["tao du an", "them du an", "lap du an"]),
-            ("tạo nhóm", ["tao nhom", "them nhom", "tao group", "tao team"]),
-            ("tạo cuộc họp hoặc lịch", ["tao cuoc hop", "tao lich hop", "dat lich hop", "tao meeting", "schedule meeting"]),
-            ("tạo poll", ["tao poll", "them poll", "lap poll"]),
-            ("tạo form hoặc quiz nhiều câu", ["tao form", "tao bieu mau", "tao quiz"]),
+            AiAssistantContextContract.ProjectLaunchCapability => "tạo dự án",
+            AiAssistantContextContract.GroupPollCapability => "tạo poll",
+            _ => string.Empty
         };
-
-        foreach (var candidate in candidates)
-        {
-            if (ContainsAny(normalized, candidate.Phrases))
-            {
-                capability = candidate.Capability;
-                return true;
-            }
-        }
-
-        capability = string.Empty;
-        return false;
+        if (capability.Length > 0) return true;
+        return inferred == AiAssistantContextContract.GroundedReadCapability &&
+            AiAssistantCapabilityIntentClassifier.TryGetUnsupportedAction(normalized, out capability);
     }
 
     private static bool ContainsAny(string normalized, params string[] terms)
@@ -4566,23 +4489,7 @@ Bạn phải trả về câu trả lời của mình dưới dạng một đối
 
     private static string Normalize(string value)
     {
-        var normalized = value.Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(normalized.Length);
-
-        foreach (var c in normalized)
-        {
-            var category = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (category != UnicodeCategory.NonSpacingMark)
-            {
-                builder.Append(c);
-            }
-        }
-
-        return builder
-            .ToString()
-            .Normalize(NormalizationForm.FormC)
-            .ToLowerInvariant()
-            .Replace('đ', 'd');
+        return AiPromptLanguage.Normalize(value);
     }
 
     internal static IList<AiChatMessageDto>? PruneChatHistory(

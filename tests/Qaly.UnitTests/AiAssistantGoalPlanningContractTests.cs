@@ -270,6 +270,27 @@ public sealed class AiAssistantGoalPlanningContractTests
             .Should().Be(AiProjectLaunchContract.CapabilityId);
     }
 
+    [Theory]
+    [InlineData("Không tạo task, chỉ phân tích tiến độ và task quá hạn.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Đừng giao task; hãy liệt kê các task chưa được giao.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Những task này đang được giao cho ai?", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Don't create tasks; just summarize overdue work.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Không điều chỉnh roadmap, chỉ phân tích rủi ro deadline.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Không xác nhận tạo Project; chỉ xem lại phương án đang chọn.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Capacity đã khai báo của team hiện còn bao nhiêu?", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Dùng weekly digest để xem báo cáo nào đã được cấu hình.", AiAssistantContextContract.GroundedReadCapability)]
+    [InlineData("Hãy tạo bản nháp đúng 4 task, không ghi dữ liệu cho tới khi tôi xác nhận.", AiAssistantContextContract.TaskCreateCapability)]
+    [InlineData("Tạoooo 3 task cho Sprint hiện tại.", AiAssistantContextContract.TaskCreateCapability)]
+    [InlineData("Không tạo Project; hãy tạo 3 task cho Project đang chọn.", AiAssistantContextContract.TaskCreateCapability)]
+    [InlineData("Không tạo task; hãy khởi chạy Project web SPA.", AiAssistantContextContract.ProjectLaunchCapability)]
+    [InlineData("Giao task này cho An sau khi kiểm tra capacity.", AiAssistantContextContract.TaskAssignmentScheduleCapability)]
+    public void IntentClassifier_AdversarialLanguage_PreservesReadAndMutationBoundaries(
+        string message,
+        string expectedCapability)
+    {
+        AiAssistantCapabilityIntentClassifier.Infer(message).Should().Be(expectedCapability);
+    }
+
     [Fact]
     public void IntentClassifier_ShortContinuation_UsesRecentProjectLaunchContext()
     {
@@ -282,6 +303,28 @@ public sealed class AiAssistantGoalPlanningContractTests
         var capability = AiAssistantCapabilityIntentClassifier.Infer("thử luôn", history);
 
         capability.Should().Be(AiProjectLaunchContract.CapabilityId);
+    }
+
+    [Fact]
+    public void IntentClassifier_Continuation_UsesNewestRelevantTopicInsteadOfOlderLaunchMention()
+    {
+        var history = new List<AiChatMessageDto>
+        {
+            new("user", "Khởi chạy Project web SPA"),
+            new("assistant", "Mình đã chuẩn bị Project Launch Brief."),
+            new("user", "Tóm tắt wiki kiến trúc và đề xuất task theo dõi"),
+            new("assistant", "Mình đã mở bản nháp từ Wiki với nguồn section-level.")
+        };
+
+        AiAssistantCapabilityIntentClassifier.Infer("tiếp tục", history)
+            .Should().Be(AiAssistantContextContract.WikiBriefTaskCapability);
+    }
+
+    [Fact]
+    public void IntentClassifier_GenericContinuationWithoutHistory_FailsSafeToRead()
+    {
+        AiAssistantCapabilityIntentClassifier.Infer("thử luôn", [])
+            .Should().Be(AiAssistantContextContract.GroundedReadCapability);
     }
 
     [Fact]
@@ -384,6 +427,37 @@ public sealed class AiAssistantGoalPlanningContractTests
 
         valid.Should().BeFalse();
         error.Should().Contain("cycle");
+    }
+
+    [Theory]
+    [InlineData(AiAssistantContextContract.ProjectLaunchCapability)]
+    [InlineData(AiAssistantContextContract.ProjectStaffingPlanCapability)]
+    [InlineData(AiAssistantContextContract.TaskCreateCapability)]
+    public void ReadPrompt_ModelCannotSelectActionEvenWhenArtifactHasNoMutationRisk(string capabilityId)
+    {
+        const string prompt = "Phân tích tiến độ Project hiện tại";
+        var context = new AiAssistantGoalPlanningValidationContextDto(
+            prompt, null, null, AiAssistantCapabilityCatalog.All.ToArray());
+        AiAssistantGoalPlanningOutputContract.TryBuildResult(
+            ModelJson(prompt, capabilityId), JsonSerializer.Serialize(context, JsonOptions),
+            "DeepSeek", "deepseek-chat", out var result, out var error).Should().BeTrue(error);
+        result!.SelectedCapabilityId.Should().Be(AiAssistantContextContract.GroundedReadCapability);
+    }
+
+    [Theory]
+    [InlineData("Soạn 4 Task cho Project", AiAssistantContextContract.TaskCreateCapability, AiAssistantContextContract.ProjectLaunchCapability)]
+    [InlineData("Phân tích tiến độ Project", AiAssistantContextContract.GroundedReadCapability, AiAssistantContextContract.ProjectLaunchCapability)]
+    public void ModelCannotSubstituteAnotherActionWhenIntendedCapabilityIsUnavailable(string prompt, string deniedId, string substituteId)
+    {
+        var context = new AiAssistantGoalPlanningValidationContextDto(prompt, null, null,
+            AiAssistantCapabilityCatalog.All.Where(item => item.CapabilityId != deniedId).ToArray());
+        AiAssistantGoalPlanningOutputContract.TryBuildResult(
+            ModelJson(prompt, substituteId), JsonSerializer.Serialize(context, JsonOptions),
+            "DeepSeek", "deepseek-chat", out var result, out var error).Should().BeTrue(error);
+        result!.SelectedCapabilityId.Should().BeNull();
+        result.GoalAnalysis.Disposition.Should().Be("policy_blocked");
+        result.GoalAnalysis.MissingSkills.Should().Contain(item => item.SkillId == deniedId);
+        result.WorkPlan.Steps.Should().NotContain(item => item.Kind == "call_skill");
     }
 
     private static AiAssistantCapabilityDescriptorDto[] WithoutSafeTestCapability()

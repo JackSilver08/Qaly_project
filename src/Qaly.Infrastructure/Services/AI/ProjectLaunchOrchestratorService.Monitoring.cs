@@ -394,12 +394,14 @@ public sealed partial class ProjectLaunchOrchestratorService
             .Include(item => item.AvailabilityWindows)
             .Where(item => item.OrganizationId == execution.OrganizationId && selectedIds.Contains(item.UserId))
             .ToDictionaryAsync(item => item.UserId, ct);
-        var commitments = await _db.TaskItems.AsNoTracking()
-            .Where(item => item.AssigneeId.HasValue && selectedIds.Contains(item.AssigneeId.Value) &&
-                !item.Project.IsDeleted && !item.IsDeleted && TaskStatusRules.OpenStatuses.Contains(item.Status) &&
-                (!item.StartDate.HasValue || item.StartDate < delivery.EndDate) && (!item.DueDate.HasValue || item.DueDate >= delivery.StartDate))
-            .GroupBy(item => item.AssigneeId!.Value)
-            .Select(group => new { UserId = group.Key, Hours = group.Sum(item => (decimal)(item.EstimatedHours ?? 8)) })
+        var commitments = await _db.TaskAssignments.AsNoTracking()
+            .Where(assignment => selectedIds.Contains(assignment.UserId) &&
+                !assignment.TaskItem.Project.IsDeleted && !assignment.TaskItem.IsDeleted &&
+                TaskStatusRules.OpenStatuses.Contains(assignment.TaskItem.Status) &&
+                (!assignment.TaskItem.StartDate.HasValue || assignment.TaskItem.StartDate < delivery.EndDate) &&
+                (!assignment.TaskItem.DueDate.HasValue || assignment.TaskItem.DueDate >= delivery.StartDate))
+            .GroupBy(assignment => assignment.UserId)
+            .Select(group => new { UserId = group.Key, Hours = group.Sum(assignment => (decimal)(assignment.TaskItem.EstimatedHours ?? 8)) })
             .ToDictionaryAsync(item => item.UserId, item => item.Hours, ct);
         var changes = new List<ProjectReplanChangeDto>();
         var weeks = Math.Max(1m, decimal.Ceiling(Math.Max(1m, (decimal)(delivery.EndDate - delivery.StartDate).TotalDays) / 7m));

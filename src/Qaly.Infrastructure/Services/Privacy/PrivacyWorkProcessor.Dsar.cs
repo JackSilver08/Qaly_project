@@ -190,7 +190,8 @@ public sealed partial class PrivacyWorkProcessor
         var tasks = scope is "all" or "project"
             ? await _db.TaskItems.IgnoreQueryFilters().AsNoTracking()
                 .Where(item => projectIds.Contains(item.ProjectId) &&
-                    (item.ReporterId == subjectUserId || item.AssigneeId == subjectUserId))
+                    (item.ReporterId == subjectUserId || item.AssigneeId == subjectUserId ||
+                     item.Assignees.Any(assignment => assignment.UserId == subjectUserId)))
                 .Select(item => new
                 {
                     item.Id,
@@ -402,7 +403,8 @@ public sealed partial class PrivacyWorkProcessor
 
             retainedSharedTaskCount = await _db.TaskItems.IgnoreQueryFilters().CountAsync(item =>
                 projectIds.Contains(item.ProjectId) &&
-                (item.ReporterId == subjectUserId || item.AssigneeId == subjectUserId), ct);
+                (item.ReporterId == subjectUserId || item.AssigneeId == subjectUserId ||
+                 item.Assignees.Any(assignment => assignment.UserId == subjectUserId)), ct);
 
             var notifications = await _db.Notifications.Where(item => item.UserId == subjectUserId).ToListAsync(ct);
             var pushSubscriptions = await _db.PushSubscriptions.Where(item => item.UserId == subjectUserId).ToListAsync(ct);

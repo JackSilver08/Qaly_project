@@ -34,6 +34,11 @@ public sealed class AiAssistantQualityEvaluatorTests
         var mismatches = routed.Where(item =>
             !string.Equals(item.Actual, item.Case.ExpectedCapability, StringComparison.Ordinal)).ToList();
 
+        mismatches.Should().BeEmpty("every regression fixture must pass, not hide behind the aggregate threshold");
+        foreach (var item in routingCases.Where(item => item.ExpectedCount.HasValue &&
+                     item.ExpectedCapability == AiAssistantContextContract.TaskCreateCapability))
+            AiActionComposerService.ExtractRequestedTaskCount(item.Prompt).Should().Be(item.ExpectedCount, item.Id);
+
         ((double)(routingCases.Count - mismatches.Count) / routingCases.Count).Should().BeGreaterThanOrEqualTo(
             AiAssistantQualityContract.MinimumRoutingAccuracy,
             string.Join(", ", mismatches.Select(item =>

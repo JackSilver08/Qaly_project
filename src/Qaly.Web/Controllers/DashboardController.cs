@@ -120,7 +120,7 @@ public partial class DashboardController : BaseApiController
             .Select(user => new
             {
                 user.FullName,
-                AssignedCount = allTasks.Count(task => task.AssigneeId == user.Id)
+                AssignedCount = allTasks.Count(task => IsAssignedTo(task, user.Id))
             })
             .OrderByDescending(item => item.AssignedCount)
             .ThenBy(item => item.FullName)
@@ -130,6 +130,13 @@ public partial class DashboardController : BaseApiController
             .OfType<Guid>()
             .Distinct()
             .ToList();
+        var capacityProfiles = await _context.OrganizationMemberCapacityProfiles
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(profile => profile.AvailabilityWindows)
+            .Where(profile => organizationIds.Contains(profile.OrganizationId) &&
+                              accessibleUserIds.Contains(profile.UserId))
+            .ToListAsync(cancellationToken);
         var customRoleRows = await _context.ProjectRoleDefinitions.AsNoTracking()
             .Where(role => organizationIds.Contains(role.OrganizationId))
             .Select(role => new { role.OrganizationId, role.Key, role.DisplayName, role.BaseRole })
@@ -248,7 +255,10 @@ public partial class DashboardController : BaseApiController
                             task.DownvoteCount,
                             isRestricted ? 0 : task.Comments.Count,
                             isRestricted ? 0 : task.Attachments.Count,
-                            task.SprintId);
+                            task.SprintId,
+                            isRestricted ? null : task.ReporterId,
+                            isRestricted ? null : task.ReviewerId,
+                            isRestricted ? [] : task.Assignees.Select(assignment => assignment.UserId).ToArray());
                     }).ToList(),
                     project.CreatedAt,
                     project.EndDate,
@@ -263,15 +273,40 @@ public partial class DashboardController : BaseApiController
         var teamResponses = users
             .Select(user =>
             {
-                var assignedTasks = allTasks.Where(task => task.AssigneeId == user.Id).ToList();
+                var assignedTasks = allTasks.Where(task => IsAssignedTo(task, user.Id)).ToList();
                 var completedAssigned = assignedTasks.Count(IsDone);
                 var inProgressAssigned = assignedTasks.Count(task => EqualsIgnoreCase(task.Status, "InProgress"));
                 var overdueAssigned = assignedTasks.Count(task => IsOverdue(task, now));
                 var ownedProjects = projects.Count(project => project.OwnerId == user.Id);
                 var activeAssignments = assignedTasks.Count(task => !IsDone(task));
-                var capacityPercent = Math.Min(100, activeAssignments * 22 + overdueAssigned * 8);
+                var userCapacityProfiles = capacityProfiles.Where(profile => profile.UserId == user.Id).ToList();
+                var hasDeclaredCapacity = userCapacityProfiles.Count > 0;
+                var declaredWeeklyHours = hasDeclaredCapacity
+                    ? userCapacityProfiles.Min(profile => profile.WeeklyCapacityHours)
+                    : 0m;
+                var planningStart = now.Date;
+                var planningEnd = planningStart.AddDays(7);
+                var selectedProfile = userCapacityProfiles
+                    .OrderBy(profile => profile.WeeklyCapacityHours)
+                    .FirstOrDefault();
+                var availabilityReduction = selectedProfile?.AvailabilityWindows
+                    .Where(window => window.EndsAt > planningStart && window.StartsAt < planningEnd)
+                    .Sum(window => CalculateAvailabilityReduction(
+                        window, declaredWeeklyHours, planningStart, planningEnd)) ?? 0m;
+                // Reserve 10% for review/coordination; a missing profile remains unknown, not free capacity.
+                var usableCapacityHours = Math.Max(0m, declaredWeeklyHours * 0.9m - availabilityReduction);
+                var assignedHours = assignedTasks
+                    .Where(task => !IsDone(task) && IntersectsPlanningWindow(task, planningStart, planningEnd))
+                    .Sum(task => (decimal)(task.EstimatedHours ?? 0));
+                var capacityPercent = !hasDeclaredCapacity
+                    ? 0
+                    : usableCapacityHours <= 0m
+                        ? assignedHours > 0m ? 100 : 0
+                        : (int)Math.Round(Math.Min(100m, assignedHours * 100m / usableCapacityHours));
                 var focusArea = ownedProjects > 0
                     ? "Điều phối dự án"
+                    : !hasDeclaredCapacity
+                        ? "Chưa khai báo capacity"
                     : activeAssignments == 0
                         ? "Còn năng lực tiếp nhận"
                         : inProgressAssigned >= 2
@@ -289,7 +324,8 @@ public partial class DashboardController : BaseApiController
                     inProgressAssigned,
                     overdueAssigned,
                     capacityPercent,
-                    focusArea);
+                    focusArea,
+                    hasDeclaredCapacity);
             })
             .ToList();
 
@@ -497,10 +533,46 @@ public partial class DashboardController : BaseApiController
         var canView =
             (task.ReporterId == currentUserId.Value ||
              task.AssigneeId == currentUserId.Value ||
+             task.Assignees.Any(assignment => assignment.UserId == currentUserId.Value) ||
              projectOwnerId == currentUserId.Value ||
              isProjectManager);
 
         return !canView;
+    }
+
+    private static bool IsAssignedTo(TaskItem task, Guid userId)
+        => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
+
+    private static decimal CalculateAvailabilityReduction(
+        MemberAvailabilityWindow window,
+        decimal weeklyCapacity,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        var overlapStart = window.StartsAt > start ? window.StartsAt : start;
+        var overlapEnd = window.EndsAt < end ? window.EndsAt : end;
+        var baseline = CountWeekdays(overlapStart, overlapEnd) * (weeklyCapacity / 5m);
+        return string.Equals(window.Kind, MemberAvailabilityWindow.Unavailable, StringComparison.OrdinalIgnoreCase)
+            ? baseline
+            : Math.Max(0m, baseline - (window.AvailableHours ?? 0m));
+    }
+
+    private static int CountWeekdays(DateTimeOffset start, DateTimeOffset end)
+    {
+        var count = 0;
+        for (var day = start.Date; day < end.Date; day = day.AddDays(1))
+        {
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)) count++;
+        }
+        return count;
+    }
+
+    private static bool IntersectsPlanningWindow(TaskItem task, DateTimeOffset start, DateTimeOffset end)
+    {
+        if (!task.StartDate.HasValue && !task.DueDate.HasValue) return true;
+        var taskStart = task.StartDate ?? task.DueDate ?? start;
+        var taskEnd = task.DueDate ?? task.StartDate ?? end;
+        return taskEnd >= start && taskStart <= end;
     }
 
     private static string NotificationTone(string type)
@@ -1037,7 +1109,10 @@ public partial class DashboardController : BaseApiController
                 t.DownvoteCount,
                 0,
                 0,
-                t.SprintId
+                t.SprintId,
+                t.ReporterId,
+                t.ReviewerId,
+                t.Assignees.Select(assignment => assignment.UserId).ToArray()
             ))
             .ToList();
 
@@ -1165,7 +1240,10 @@ public sealed record DashboardTaskResponse(
     int DownvoteCount,
     int CommentCount,
     int AttachmentCount,
-    Guid? SprintId);
+    Guid? SprintId,
+    Guid? ReporterId = null,
+    Guid? ReviewerId = null,
+    IReadOnlyList<Guid>? AssigneeIds = null);
 
 public sealed record DashboardMemberResponse(
     Guid Id,
@@ -1178,7 +1256,8 @@ public sealed record DashboardMemberResponse(
     int InProgressTaskCount,
     int OverdueTaskCount,
     int CapacityPercent,
-    string FocusArea);
+    string FocusArea,
+    bool HasDeclaredCapacity);
 
 public sealed record DashboardNotificationResponse(
     string Id,

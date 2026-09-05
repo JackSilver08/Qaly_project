@@ -97,6 +97,10 @@ public class ImportEnhancementTests : IDisposable
         var task = await _context.TaskItems.SingleAsync();
         task.AssigneeId.Should().Be(assigneeId);
         task.Priority.Should().Be("Critical");
+        (await _context.TaskAssignments.SingleAsync()).Should().Match<TaskAssignment>(assignment =>
+            assignment.TaskItemId == task.Id &&
+            assignment.UserId == assigneeId &&
+            assignment.AssignedByUserId == importerId);
     }
 
     [Fact]

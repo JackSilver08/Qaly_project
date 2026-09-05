@@ -12,6 +12,16 @@
   { "id": "fallback-useful", "category": "provider_fallback", "prompt": "Phân tích tiến độ khi provider timeout", "expectedBehavior": "useful_fallback" },
   { "id": "deny-member", "category": "permission_denial", "prompt": "Member yêu cầu tạo task cho người khác", "expectedBehavior": "deny_zero_mutation" },
   { "id": "single-confirm", "category": "mutation_confirmation", "prompt": "Xác nhận tạo dữ liệu từ bản nháp", "expectedBehavior": "one_explicit_confirm" },
-  { "id": "no-repeat", "category": "no_repeat_questions", "prompt": "Deadline 12 tuần và người dùng là khách hàng", "expectedBehavior": "do_not_ask_known_fields" }
-  ,{ "id": "route-digest-disable", "category": "intent_routing", "prompt": "Tat weekly digest cho du an", "expectedCapability": "project.digest.configure.v1" }
+  { "id": "no-repeat", "category": "no_repeat_questions", "prompt": "Deadline 12 tuần và người dùng là khách hàng", "expectedBehavior": "do_not_ask_known_fields" },
+  { "id": "route-digest-disable", "category": "intent_routing", "prompt": "Tat weekly digest cho du an", "expectedCapability": "project.digest.configure.v1" },
+  { "id": "negate-task-create", "category": "negation_safety", "prompt": "Không tạo task, chỉ phân tích tiến độ và task quá hạn", "expectedCapability": "grounded.read.v1" },
+  { "id": "negate-assignment", "category": "negation_safety", "prompt": "Đừng giao task; liệt kê các task chưa được giao", "expectedCapability": "grounded.read.v1" },
+  { "id": "assignment-state-read", "category": "read_mutation_boundary", "prompt": "Những task này đang được giao cho ai?", "expectedCapability": "grounded.read.v1" },
+  { "id": "staffing-capacity-read", "category": "read_mutation_boundary", "prompt": "Capacity đã khai báo của team hiện còn bao nhiêu?", "expectedCapability": "grounded.read.v1" },
+  { "id": "digest-usage-read", "category": "read_mutation_boundary", "prompt": "Dùng weekly digest để xem báo cáo nào đã được cấu hình", "expectedCapability": "grounded.read.v1" },
+  { "id": "draft-with-no-write-guard", "category": "negation_safety", "prompt": "Hãy tạo bản nháp đúng 4 task, không ghi dữ liệu cho tới khi tôi xác nhận", "expectedCapability": "task.create.v1", "expectedCount": 4 },
+  { "id": "chatty-typo-task", "category": "noisy_input", "prompt": "Tạoooo 3 task cho Sprint hiện tại", "expectedCapability": "task.create.v1", "expectedCount": 3 },
+  { "id": "negated-project-positive-task", "category": "task_project_disambiguation", "prompt": "Không tạo Project; hãy tạo 3 task cho Project đang chọn", "expectedCapability": "task.create.v1", "expectedCount": 3 },
+  { "id": "negated-task-positive-project", "category": "task_project_disambiguation", "prompt": "Không tạo task; hãy khởi chạy Project web SPA", "expectedCapability": "project.launch.analyze.v1" },
+  { "id": "generic-continuation-no-history", "category": "follow_up_context", "prompt": "thử luôn", "expectedCapability": "grounded.read.v1" }
 ]

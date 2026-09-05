@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Box, Settings } from 'lucide-vue-next'
+import { Box, CircleHelp, Settings } from 'lucide-vue-next'
 import { useRoute, type NavigationFailure } from 'vue-router'
 import type { ShellNavItem } from './shell-models'
+import SystemRoleGuideModal from './SystemRoleGuideModal.vue'
 
 const props = defineProps<{
   items: ShellNavItem[]
@@ -21,12 +22,18 @@ const emit = defineEmits<{
 const route = useRoute()
 const defaultAvatarUrl = '/images/avatars/default-avatar.svg'
 const avatarLoadFailed = ref(false)
+const roleGuideOpen = ref(false)
 
 const resolvedUserName = computed(() => props.userName?.trim() || 'Qaly user')
 const resolvedRoleLabel = computed(() => formatRoleLabel(props.userRole))
 const resolvedAvatarUrl = computed(() =>
   !props.userAvatarUrl || avatarLoadFailed.value ? defaultAvatarUrl : props.userAvatarUrl,
 )
+const roleGuidePages = computed(() => [
+  ...props.items.map(item => item.label),
+  ...(props.canAccessArchivedProjects ? ['Dự án đã lưu trữ'] : []),
+  ...(props.canAccessSettings ? ['Cài đặt'] : []),
+])
 
 watch(
   () => props.userAvatarUrl,
@@ -82,7 +89,13 @@ function formatRoleLabel(role: string | null | undefined) {
       </div>
     </div>
 
-    <section class="sidebar-profile" aria-label="Hồ sơ người dùng">
+    <button
+      type="button"
+      class="sidebar-profile"
+      :disabled="userLoading"
+      aria-label="Mở hướng dẫn sử dụng theo vai trò"
+      @click="roleGuideOpen = true"
+    >
       <template v-if="userLoading">
         <div class="sidebar-profile__avatar sidebar-profile__avatar--skeleton" aria-hidden="true"></div>
         <div class="sidebar-profile__content sidebar-profile__content--skeleton" aria-hidden="true">
@@ -102,9 +115,18 @@ function formatRoleLabel(role: string | null | undefined) {
         <div class="sidebar-profile__content">
           <span class="sidebar-profile__role">{{ resolvedRoleLabel }}</span>
           <strong class="sidebar-profile__name">{{ resolvedUserName }}</strong>
+          <small class="sidebar-profile__guide"><CircleHelp :size="13" /> Hướng dẫn role</small>
         </div>
       </template>
-    </section>
+    </button>
+
+    <SystemRoleGuideModal
+      :open="roleGuideOpen"
+      :role="userRole"
+      :user-name="resolvedUserName"
+      :pages="roleGuidePages"
+      @close="roleGuideOpen = false"
+    />
 
     <div class="sidebar-divider" aria-hidden="true"></div>
 
@@ -168,7 +190,23 @@ function formatRoleLabel(role: string | null | undefined) {
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.72));
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
 }
+
+.sidebar-profile:hover:not(:disabled),
+.sidebar-profile:focus-visible {
+  border-color: rgba(37, 99, 235, .38);
+  outline: none;
+  box-shadow: 0 7px 20px rgba(37, 99, 235, .1);
+  transform: translateY(-1px);
+}
+
+.sidebar-profile:disabled { cursor: default; }
 
 .sidebar-profile__avatar {
   width: 52px;
@@ -208,6 +246,16 @@ function formatRoleLabel(role: string | null | undefined) {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-profile__guide {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
 }
 
 .sidebar-divider {

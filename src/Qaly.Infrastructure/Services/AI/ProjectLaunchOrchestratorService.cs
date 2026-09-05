@@ -273,6 +273,7 @@ Use stable ASCII clientId values. Dependencies must reference existing task clie
 Return these exact root fields and no others: architectureProposal, sprints, criticalPathClientIds, collaborationProposal, externalDeferred, assumptions.
 Each sprint: clientId,name,objective,startWeek,durationWeeks,exitCriteria,tasks.
 Each task: clientId,title,description,acceptanceCriteria,definitionOfDone,priority,estimatedHours,requiredSkillNames,dependencyClientIds,featureId,objectiveMetricIds.
+requiredSkillNames is the focused 1-3 skill set needed by the Task assignee/reviewer, not a copy of every skill associated with the parent feature.
 featureId must reference one reviewed feature. objectiveMetricIds may contain only reviewed metric IDs and must describe the outcome that task actually advances; do not attach every metric to every task.
 """;
         string? lastError = null;
@@ -448,10 +449,9 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
                         task.Title.Contains(item.Title, StringComparison.OrdinalIgnoreCase) ||
                         task.Description.Contains(item.Title, StringComparison.OrdinalIgnoreCase))
                     ?? selectedFeatures.ElementAtOrDefault(taskOrdinal % Math.Max(1, selectedFeatures.Length));
-                var requiredSkillNames = task.RequiredSkillNames
-                    .Concat(feature?.RequiredSkillNames ?? [])
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
+                var requiredSkillNames = ResolveTaskSkillNames(
+                    task.RequiredSkillNames,
+                    feature?.RequiredSkillNames ?? []);
                 var matchedSkills = requiredSkillNames
                     .Select(name => skillMap.GetValueOrDefault(Normalize(name)))
                     .Where(item => item != null)
@@ -528,6 +528,23 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
             selectedFeatures,
             brief.ObjectiveProfile?.Metrics ?? [],
             scenario.Members.Count);
+    }
+
+    private static string[] ResolveTaskSkillNames(
+        IReadOnlyList<string> taskSkills,
+        IReadOnlyList<string> featureSkills)
+    {
+        var focused = taskSkills
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return focused.Length > 0
+            ? focused
+            : featureSkills
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray();
     }
 
     private async Task<ProjectLaunchPlanDto> MapPlanAsync(
@@ -631,9 +648,22 @@ featureId must reference one reviewed feature. objectiveMetricIds may contain on
             .ToArrayAsync(ct);
         var tasks = await _db.TaskItems.IgnoreQueryFilters().AsNoTracking()
             .Where(item => projectIds.Contains(item.ProjectId) ||
-                (item.AssigneeId.HasValue && memberUserIds.Contains(item.AssigneeId.Value) && !item.Project.IsDeleted))
+                ((item.AssigneeId.HasValue && memberUserIds.Contains(item.AssigneeId.Value) ||
+                  item.Assignees.Any(assignment => memberUserIds.Contains(assignment.UserId))) && !item.Project.IsDeleted))
             .OrderBy(item => item.Id)
-            .Select(item => new { item.Id, item.ProjectId, item.AssigneeId, item.Status, item.StartDate, item.DueDate, item.EstimatedHours, item.IsDeleted, item.RowVersion })
+            .Select(item => new
+            {
+                item.Id,
+                item.ProjectId,
+                item.AssigneeId,
+                AssigneeIds = item.Assignees.Select(assignment => assignment.UserId).OrderBy(userId => userId).ToArray(),
+                item.Status,
+                item.StartDate,
+                item.DueDate,
+                item.EstimatedHours,
+                item.IsDeleted,
+                item.RowVersion
+            })
             .ToArrayAsync(ct);
         var skills = await _db.OrganizationSkills.AsNoTracking()
             .Where(item => item.OrganizationId == organizationId)

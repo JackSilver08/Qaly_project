@@ -7,6 +7,8 @@
     "dev": "node ./node_modules/vite/dist/node/cli.js --configLoader runner",
     "dev:all": "node ./scripts/dev-all.mjs",
     "dev:all:ai": "node ./scripts/dev-all.mjs --ai",
+    "dev:preview": "node ./scripts/dev-all.mjs --no-open",
+    "dev:preview:ai": "node ./scripts/dev-all.mjs --ai --no-open",
     "build": "node ./node_modules/vite/dist/node/cli.js build --configLoader runner",
     "preview": "node ./node_modules/vite/dist/node/cli.js preview --configLoader runner",
     "typecheck": "node ./scripts/vue-tsc.mjs --noEmit -p tsconfig.json",

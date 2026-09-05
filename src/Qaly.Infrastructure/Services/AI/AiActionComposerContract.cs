@@ -95,7 +95,7 @@ public static class AiActionComposerOutputContract
             {
                 return false;
             }
-            commands = ApplySafeSprintSchedule(snapshot, commands);
+            commands = ApplyRequestedAssignment(snapshot, ApplySafeSprintSchedule(snapshot, commands));
 
             canonicalOptions.Add(new AiActionOptionDto(
                 optionId,
@@ -125,7 +125,7 @@ public static class AiActionComposerOutputContract
             targetEntities,
             NormalizeList(model.Assumptions, 12, 300),
             NormalizeList(model.MissingFields, 8, 120),
-            NormalizeList(model.Warnings, 12, 300),
+            AddAssignmentDisclosure(snapshot, NormalizeList(model.Warnings, 12, 300)),
             canonicalOptions,
             new AiActionReviewSelectionDto(first.OptionId, first.Commands.Select(command => command.CommandId).ToList()),
             DateTimeOffset.UtcNow);
@@ -147,7 +147,9 @@ public static class AiActionComposerOutputContract
         }
 
         var isVietnamese = !string.Equals(snapshot!.Language, "en", StringComparison.OrdinalIgnoreCase);
-        var intent = snapshot.UserIntent.Trim();
+        var parsedPrompt = AiTaskPrompt.Parse(snapshot.UserIntent);
+        var intent = string.IsNullOrWhiteSpace(snapshot.TaskContent) ? parsedPrompt.Content.Trim() : snapshot.TaskContent.Trim();
+        if (string.IsNullOrWhiteSpace(intent)) intent = "Phạm vi công việc cần được người dùng bổ sung";
         var conciseIntent = intent.Length <= 140 ? intent : $"{intent[..137]}...";
         var projectRef = snapshot.Project.SourceRef;
         IReadOnlyList<string> fallbackSourceRefs = snapshot.Sprint == null
@@ -159,7 +161,15 @@ public static class AiActionComposerOutputContract
                 new AiActionTargetEntityDto("project", snapshot.Project.Id, snapshot.Project.Name),
                 new AiActionTargetEntityDto("sprint", snapshot.Sprint.Id, snapshot.Sprint.Name)
             ];
-        var commands = BuildNamedTenTaskFallback(snapshot, fallbackSourceRefs) ?? (isVietnamese
+        var explicitTitles = parsedPrompt.TaskTitles(snapshot.RequestedTaskCount);
+        var explicitCommands = explicitTitles.Count > 0
+            ? explicitTitles.Select((title, index) => BuildFallbackCommand(
+                $"fallback-request-{index + 1:D2}", title,
+                isVietnamese ? $"Thực hiện và bàn giao: {title}." : $"Deliver and verify: {title}.",
+                [isVietnamese ? $"{title} đáp ứng phạm vi đã duyệt" : $"{title} meets the reviewed scope"],
+                "High", 4, fallbackSourceRefs)).ToList()
+            : null;
+        var commands = BuildNamedTenTaskFallback(snapshot, fallbackSourceRefs) ?? explicitCommands ?? (isVietnamese
             ? new List<AiActionTaskCommandDto>
             {
                 BuildFallbackCommand(
@@ -228,7 +238,7 @@ public static class AiActionComposerOutputContract
                 intent,
                 fallbackSourceRefs));
         }
-        commands = ApplySafeSprintSchedule(snapshot, commands);
+        commands = ApplyRequestedAssignment(snapshot, ApplySafeSprintSchedule(snapshot, commands));
 
         var option = new AiActionOptionDto(
             "server-safe-plan",
@@ -251,9 +261,9 @@ public static class AiActionComposerOutputContract
             fallbackTargetEntities,
             [],
             isVietnamese ? ["Sprint", "Người phụ trách", "Kỹ năng bắt buộc"] : ["Sprint", "Assignee", "Required skills"],
-            isVietnamese
+            AddAssignmentDisclosure(snapshot, isVietnamese
                 ? ["Model đã chọn không trả được schema hợp lệ; Qaly dùng bản nháp server an toàn để luồng không bị gián đoạn."]
-                : ["The selected model did not return a valid schema; Qaly used a safe server draft so the workflow can continue."],
+                : ["The selected model did not return a valid schema; Qaly used a safe server draft so the workflow can continue."]),
             [option],
             new AiActionReviewSelectionDto(option.OptionId, commands.Select(command => command.CommandId).ToList()),
             DateTimeOffset.UtcNow);
@@ -372,6 +382,13 @@ public static class AiActionComposerOutputContract
             error = "Action Composer snapshot is missing an authoritative project, source version, intent, members, or skills.";
             return false;
         }
+        var requestedMemberId = snapshot.RequestedAssigneeId;
+        if (requestedMemberId.HasValue &&
+            (snapshot.LeaveUnassigned || snapshot.Members.All(member => member.UserId != requestedMemberId.Value)))
+        {
+            error = "Requested assignee must be an authorized Project member and cannot contradict unassigned mode.";
+            return false;
+        }
 
         return true;
     }
@@ -417,6 +434,14 @@ public static class AiActionComposerOutputContract
         var commandId = NormalizeText(command.CommandId, 80);
         var title = NormalizeText(command.Title, 200);
         var description = NormalizeOptionalText(command.Description, 4000);
+        if (!allowUserSelected && snapshot.RequestedAssigneeId.HasValue &&
+            !AiTaskPrompt.Parse(snapshot.UserIntent).TaskTitles(snapshot.RequestedTaskCount).Contains(command.Title) &&
+            (AiTaskPrompt.Parse(command.Title ?? string.Empty).Assignee != null ||
+             AiTaskPrompt.Parse(command.Description ?? string.Empty).Assignee != null))
+        {
+            error = "The model copied assignment instructions into task content; business content and assignee must be separate.";
+            return false;
+        }
         if (commandId == null || title == null ||
             !string.Equals(command.ToolName, AiActionComposerContract.TaskCreateTool, StringComparison.Ordinal) ||
             !string.Equals(command.ToolVersion, "1.0", StringComparison.Ordinal))
@@ -518,6 +543,26 @@ public static class AiActionComposerOutputContract
             dependencyCommandIds);
         return true;
     }
+
+    private static List<AiActionTaskCommandDto> ApplyRequestedAssignment(
+        AiActionContextSnapshotDto snapshot, List<AiActionTaskCommandDto> commands)
+    {
+        if (snapshot.LeaveUnassigned)
+            return commands.Select(command => command with { AssigneeId = null, AssigneeMode = "unassigned" }).ToList();
+        if (!snapshot.RequestedAssigneeId.HasValue) return commands;
+        // The model cannot select people. This ID came from an explicit user instruction,
+        // resolved against active Project members by the server, just like a review selection.
+        return commands.Select(command => command with
+        {
+            AssigneeId = snapshot.RequestedAssigneeId,
+            AssigneeMode = "user_selected"
+        }).ToList();
+    }
+
+    private static IReadOnlyList<string> AddAssignmentDisclosure(AiActionContextSnapshotDto snapshot, IReadOnlyList<string> warnings)
+        => snapshot.RequestedAssigneeId.HasValue
+            ? warnings.Append($"Người được giao theo chỉ định: {snapshot.RequestedAssigneeName}. Đây là lựa chọn để review, không phải kết luận AI đã xác minh đủ kỹ năng/capacity. Bạn có thể đổi người trước khi xác nhận.").ToArray()
+            : warnings;
 
     private static List<AiActionTaskCommandDto> ApplySafeSprintSchedule(
         AiActionContextSnapshotDto snapshot,

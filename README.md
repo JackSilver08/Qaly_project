@@ -1,5 +1,7 @@
 # 🚀 Qaly Project - Project Management System
 
+> **Bắt đầu tại đây:** [Hướng dẫn cài đặt, chạy dự án và tự mở preview](./SETUP_AND_RUN.md)
+
 [![CI](https://github.com/JackSilver08/Qaly_project/actions/workflows/ci.yml/badge.svg)](https://github.com/JackSilver08/Qaly_project/actions/workflows/ci.yml)
 [![CD](https://github.com/JackSilver08/Qaly_project/actions/workflows/cd.yml/badge.svg)](https://github.com/JackSilver08/Qaly_project/actions/workflows/cd.yml)
 

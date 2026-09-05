@@ -207,8 +207,9 @@ public sealed partial class ProjectLaunchOrchestratorService
                 var requestedSkillIds = task.RequiredSkillIds.Distinct().ToArray();
                 if (requestedSkillIds.Any(id => !skillsById.ContainsKey(id)))
                     return new(null, $"Task '{task.Title}' chứa kỹ năng không hoạt động hoặc không thuộc tổ chức này.", "project_launch_skill_invalid");
-                var requiredNames = task.RequiredSkillNames
-                    .Concat(feature.RequiredSkillNames)
+                var requiredNames = ResolveTaskSkillNames(
+                        task.RequiredSkillNames,
+                        feature.RequiredSkillNames)
                     .Concat(requestedSkillIds.Select(id => skillsById[id].Name))
                     .Where(item => !string.IsNullOrWhiteSpace(item))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -272,11 +273,9 @@ public sealed partial class ProjectLaunchOrchestratorService
                 blocking.Add($"{candidate.DisplayName} chưa vượt kiểm tra lịch, capacity hoặc giới hạn đa dự án.");
             if (item.Manager && !candidate.ManagerEligible)
                 blocking.Add($"{candidate.DisplayName} không có vai trò phù hợp để quản lý dự án.");
-            if ((string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal) && item.ProposedHours <= 0) ||
-                item.ProposedHours > candidate.AvailableHours)
-                blocking.Add(string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal)
-                    ? $"Số giờ của {candidate.DisplayName} phải lớn hơn 0 và không vượt {candidate.AvailableHours:0.#} giờ khả dụng."
-                    : $"Số giờ của {candidate.DisplayName} không được vượt {candidate.AvailableHours:0.#} giờ khả dụng; chế độ tự cân bằng sẽ tính lại allocation thực tế.");
+            if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal) &&
+                (item.ProposedHours <= 0 || item.ProposedHours > candidate.AvailableHours))
+                blocking.Add($"Số giờ của {candidate.DisplayName} phải lớn hơn 0 và không vượt {candidate.AvailableHours:0.#} giờ khả dụng.");
 
             var normalizedEvidence = candidate.EvidenceSkills.Select(Normalize).ToHashSet(StringComparer.Ordinal);
             var covered = requiredSkills.Where(skill => normalizedEvidence.Contains(Normalize(skill))).ToArray();
@@ -306,7 +305,8 @@ public sealed partial class ProjectLaunchOrchestratorService
         // mode, while preserve mode may deliberately keep work in backlog.
         // A raw sum check here would therefore either block a valid automatic
         // rebalance or silently undo the user's backlog choice.
-        if (members.Any(item => item.LoadAfterPercent > maxUtilizationPercent))
+        if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.PreserveAssignments, StringComparison.Ordinal) &&
+            members.Any(item => item.LoadAfterPercent > maxUtilizationPercent))
             blocking.Add($"Một hoặc nhiều thành viên vượt ngưỡng sử dụng {maxUtilizationPercent:0.#}% theo quy tắc làm việc.");
 
         var manager = managerOverrides.Length == 1
@@ -394,9 +394,10 @@ public sealed partial class ProjectLaunchOrchestratorService
                 else if (task.ProposedAssigneeId.HasValue)
                     return new(null, $"Người được chọn cho Task '{task.Title}' không còn thuộc đội hình. Hãy chọn lại hoặc để chưa giao.");
 
-                if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal) &&
-                    (assignee == null || !CombinedSkillsCover(task.RequiredSkillNames, assignee, reviewer)))
-                    return new(null, $"Chưa có cặp người thực hiện/reviewer vừa phủ đủ kỹ năng vừa còn capacity ở đúng các tuần của Task '{task.Title}'. Hãy thêm người có bằng chứng kỹ năng, đổi lịch Sprint, giảm estimate hoặc chuyển việc này sang backlog chưa giao.");
+                if (string.Equals(assignmentMode, ProjectLaunchAssignmentModes.AutoBalance, StringComparison.Ordinal) && assignee == null)
+                    return new(null, TeamSkillsCover(task.RequiredSkillNames, members)
+                        ? $"Không còn capacity phù hợp ở đúng các tuần của Task '{task.Title}'. Hãy đổi lịch Sprint, giảm estimate, thêm người hoặc chuyển Task sang backlog chưa giao."
+                        : $"Đội hình chưa phủ đủ kỹ năng cho Task '{task.Title}'. Hãy thêm thành viên có bằng chứng phù hợp hoặc điều chỉnh required skill đã review.");
 
                 if (assignee != null)
                 {
@@ -499,11 +500,36 @@ public sealed partial class ProjectLaunchOrchestratorService
     {
         if (assignee == null) return null;
         return members
-            .Where(item => item.UserId != assignee.UserId && CombinedSkillsCover(requiredSkills, assignee, item))
-            .OrderByDescending(item => string.Equals(item.ProposedRole, ProjectRoleRules.Reviewer, StringComparison.Ordinal))
+            .Where(item => item.UserId != assignee.UserId)
+            .OrderByDescending(item => CombinedSkillCoverageCount(requiredSkills, assignee, item))
+            .ThenByDescending(item => string.Equals(item.ProposedRole, ProjectRoleRules.Reviewer, StringComparison.Ordinal))
             .ThenBy(item => item.LoadAfterPercent)
             .ThenBy(item => item.UserId)
             .FirstOrDefault();
+    }
+
+    private static int CombinedSkillCoverageCount(
+        IReadOnlyList<string> requiredSkills,
+        ProjectStaffingMemberDto assignee,
+        ProjectStaffingMemberDto? reviewer)
+    {
+        if (requiredSkills.Count == 0) return 0;
+        var covered = assignee.CoveredSkills
+            .Concat(reviewer?.CoveredSkills ?? [])
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
+        return requiredSkills.Count(skill => covered.Contains(Normalize(skill)));
+    }
+
+    private static bool TeamSkillsCover(
+        IReadOnlyList<string> requiredSkills,
+        IReadOnlyList<ProjectStaffingMemberDto> members)
+    {
+        if (requiredSkills.Count == 0) return true;
+        var covered = members.SelectMany(item => item.CoveredSkills)
+            .Select(Normalize)
+            .ToHashSet(StringComparer.Ordinal);
+        return requiredSkills.All(skill => covered.Contains(Normalize(skill)));
     }
 
     private static bool CombinedSkillsCover(
@@ -511,12 +537,8 @@ public sealed partial class ProjectLaunchOrchestratorService
         ProjectStaffingMemberDto assignee,
         ProjectStaffingMemberDto? reviewer)
     {
-        if (requiredSkills.Count == 0) return true;
-        var covered = assignee.CoveredSkills
-            .Concat(reviewer?.CoveredSkills ?? [])
-            .Select(Normalize)
-            .ToHashSet(StringComparer.Ordinal);
-        return requiredSkills.All(skill => covered.Contains(Normalize(skill)));
+        return requiredSkills.Count == 0 ||
+               CombinedSkillCoverageCount(requiredSkills, assignee, reviewer) == requiredSkills.Count;
     }
 
     private sealed record AssignmentSelection(

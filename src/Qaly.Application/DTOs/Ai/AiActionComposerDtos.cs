@@ -115,7 +115,11 @@ public sealed record AiActionContextSnapshotDto(
     IReadOnlyList<AiActionSkillContextDto> Skills,
     IReadOnlyList<string> AllowedSourceRefs,
     AiActionSprintContextDto? Sprint = null,
-    int? RequestedTaskCount = null);
+    int? RequestedTaskCount = null,
+    string? TaskContent = null,
+    Guid? RequestedAssigneeId = null,
+    string? RequestedAssigneeName = null,
+    bool LeaveUnassigned = false);
 
 public sealed record AiActionTargetEntityDto(
     string Type,

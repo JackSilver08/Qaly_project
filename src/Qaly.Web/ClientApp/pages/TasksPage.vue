@@ -808,6 +808,7 @@ function taskActionLabel(status: string) {
 }
 
 async function updateSingleTaskStatus(task: Pick<DashboardTask, 'id'>, status: string) {
+  if (!nextStatuses(task).includes(status)) return
   try {
     await apiCommand(`/api/tasks/${task.id}/status`, {
       method: 'PATCH',
@@ -821,7 +822,7 @@ async function updateSingleTaskStatus(task: Pick<DashboardTask, 'id'>, status: s
 }
 
 async function bulkUpdateStatus(status: string) {
-  if (selectedTaskIds.value.length === 0) return
+  if (!canBulkUpdateStatus(status)) return
   const total = selectedTaskIds.value.length
   try {
     await apiCommand('/api/tasks/batch-status', {
@@ -834,6 +835,10 @@ async function bulkUpdateStatus(status: string) {
   } catch (error) {
     showError(errorMessage(error, 'Không thể cập nhật hàng loạt.'))
   }
+}
+
+function canBulkUpdateStatus(status: string) {
+  return selectedTaskIds.value.length > 0 && selectedTaskIds.value.every(id => nextStatuses({ id }).includes(status))
 }
 
 async function bulkDeleteTasks() {
@@ -907,7 +912,7 @@ async function openTaskAiNative(capability: 'checklist' | 'breakdown') {
 }
 
 function showQuickStatusButtons(task: DashboardTask) {
-  return nextStatuses(task.status).slice(0, 3)
+  return nextStatuses(task).slice(0, 3)
 }
 
 function canNudge(task: HubTask | TaskAttentionDto) {
@@ -955,7 +960,8 @@ function workflowStageStatus(stage: WorkflowMiniStage) {
 }
 
 function workflowStageActionEnabled(stage: WorkflowMiniStage) {
-  return stage === 'todo' || stage === 'inProgress' || stage === 'inReview' || stage === 'done'
+  const task = selectedTaskSummary.value
+  return !!task && nextStatuses(task).includes(workflowStageStatus(stage))
 }
 
 async function setWorkflowStage(stage: string) {
@@ -1200,8 +1206,9 @@ function workflowNextAction(task: Pick<WorkflowTask, 'status' | 'assigneeId' | '
             <small>Áp dụng thay đổi hàng loạt cho các task này.</small>
           </div>
           <div class="bulk-bar__actions">
-            <button class="pill-button" type="button" @click="bulkUpdateStatus('InProgress')">Sang In Progress</button>
-            <button class="pill-button" type="button" @click="bulkUpdateStatus('Done')">Đánh dấu Done</button>
+            <button class="pill-button" type="button" :disabled="!canBulkUpdateStatus('InProgress')" @click="bulkUpdateStatus('InProgress')">Bắt đầu làm</button>
+            <button class="pill-button" type="button" :disabled="!canBulkUpdateStatus('InReview')" @click="bulkUpdateStatus('InReview')">Gửi duyệt</button>
+            <button class="pill-button" type="button" :disabled="!canBulkUpdateStatus('Done')" title="Chỉ người có quyền review hoặc quản lý được xác nhận các task đã gửi duyệt." @click="bulkUpdateStatus('Done')">Duyệt hoàn thành</button>
             <button class="pill-button pill-button--danger" type="button" @click="bulkDeleteTasks">
               <Trash2 :size="14" />
               Xóa

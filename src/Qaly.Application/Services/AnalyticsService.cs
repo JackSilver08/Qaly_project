@@ -42,6 +42,7 @@ public class AnalyticsService : IAnalyticsService
 
         var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
             .Where(t => t.ProjectId == projectId)
+            .Include(t => t.Assignees)
             .ToListAsync(ct);
 
         var taskIds = tasks.Select(t => t.Id).ToList();
@@ -68,8 +69,8 @@ public class AnalyticsService : IAnalyticsService
         var memberProductivity = members.Select(m => new MemberProductivityDto(
             m.UserId,
             m.User.FullName,
-            tasks.Count(t => t.AssigneeId == m.UserId),
-            tasks.Count(t => t.AssigneeId == m.UserId && t.Status == "Done"),
+            tasks.Count(t => IsAssignedTo(t, m.UserId)),
+            tasks.Count(t => IsAssignedTo(t, m.UserId) && t.Status == "Done"),
             timeEntries.Where(te => te.UserId == m.UserId).Sum(te => te.TotalMinutes) / 60.0
         )).ToList();
 
@@ -115,7 +116,7 @@ public class AnalyticsService : IAnalyticsService
         if (currentUserId == null) return Result.Forbidden<WorkspaceAnalyticsDto>();
 
         var isSystemAdmin = ProjectRoleRules.IsSystemAdmin(_currentUserService.Role);
-        var allProjectIds = await _projectRepo.GetQueryable()
+        var accessibleProjects = await _projectRepo.GetQueryable()
             .Where(project => isSystemAdmin ||
                 (project.OrganizationId == null
                     ? project.OwnerId == currentUserId ||
@@ -131,8 +132,9 @@ public class AnalyticsService : IAnalyticsService
                        ((project.OwnerId == currentUserId ||
                          project.Members.Any(member => member.UserId == currentUserId)) &&
                         project.Organization.Members.Any(member => member.UserId == currentUserId)))))
-            .Select(p => p.Id)
+            .Select(project => new { project.Id, project.Status })
             .ToListAsync(ct);
+        var allProjectIds = accessibleProjects.Select(project => project.Id).ToList();
 
         var tasks = await _taskAccessPolicy.ApplyVisibilityFilter(_taskRepo.GetQueryable())
             .Where(t => allProjectIds.Contains(t.ProjectId))
@@ -147,12 +149,15 @@ public class AnalyticsService : IAnalyticsService
 
         return Result.Success(new WorkspaceAnalyticsDto(
             allProjectIds.Count,
-            allProjectIds.Count, // All accessible projects considered active
+            accessibleProjects.Count(project => !string.Equals(project.Status, "Archived", StringComparison.OrdinalIgnoreCase)),
             tasks.Count,
             tasks.Count(t => t.Status == "Done" && t.UpdatedAt.HasValue && t.UpdatedAt.Value >= weekStart),
             Math.Round(timeEntries.Sum(t => t.TotalMinutes) / 60.0, 2)
         ));
     }
+
+    private static bool IsAssignedTo(TaskItem task, Guid userId)
+        => task.AssigneeId == userId || task.Assignees.Any(assignment => assignment.UserId == userId);
 
     private async Task<bool> CanAccessProjectAsync(Guid projectId, CancellationToken ct)
     {

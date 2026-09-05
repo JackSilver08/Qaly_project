@@ -578,6 +578,14 @@ public partial class ImportService : IImportService
                 ImportSessionId = session.Id,
                 SortOrder = currentSortOrder
             };
+            if (assigneeId.HasValue)
+            {
+                task.Assignees.Add(new TaskAssignment
+                {
+                    UserId = assigneeId.Value,
+                    AssignedByUserId = userId
+                });
+            }
             tasksToInsert.Add(task);
 
             // Handle labels

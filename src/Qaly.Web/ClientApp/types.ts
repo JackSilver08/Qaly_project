@@ -66,6 +66,10 @@ export interface DashboardTask {
     sprintId: string | null;
     assigneeId: string | null;
     assigneeName: string | null;
+    assigneeIds?: string[];
+    assignees?: { userId: string }[];
+    reporterId?: string | null;
+    reviewerId?: string | null;
     reporterName: string;
     projectName: string;
     sortOrder: number;
@@ -148,6 +152,7 @@ export interface DashboardMember {
     overdueTaskCount: number;
     capacityPercent: number;
     focusArea: string;
+    hasDeclaredCapacity: boolean;
 }
 
 export interface DashboardNotification {
@@ -453,7 +458,7 @@ export interface PortfolioMemberCapacityDto {
     fullName: string;
     avatarUrl: string | null;
     weeklyCapacityHours: number;
-    capacityState: 'assumed_default' | 'declared' | 'declared_with_availability';
+    capacityState: 'missing_declared_capacity' | 'declared' | 'declared_with_availability';
     windowCapacityHours: number;
     assignedHours: number;
     remainingHours: number;

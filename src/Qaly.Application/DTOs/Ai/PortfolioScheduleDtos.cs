@@ -55,7 +55,8 @@ public sealed record UpdateMemberCapacityProfileDto(
 public sealed record CreatePortfolioScheduleProposalDto(
     IReadOnlyList<Guid> TaskIds,
     DateTimeOffset WindowStart,
-    DateTimeOffset WindowEnd);
+    DateTimeOffset WindowEnd,
+    string? RequestedAssignee = null);
 
 public sealed record UpdatePortfolioScheduleProposalDto(
     IReadOnlyList<PortfolioScheduleProposalItemDto> Items,

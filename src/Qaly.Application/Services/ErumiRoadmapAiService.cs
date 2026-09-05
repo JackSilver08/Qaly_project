@@ -25,6 +25,7 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
     private readonly IRepository<Sprint> _sprintRepo;
     private readonly IRepository<TaskItem> _taskRepo;
     private readonly IRepository<ProjectMember> _memberRepo;
+    private readonly IRepository<OrganizationMemberCapacityProfile> _capacityProfileRepo;
     private readonly ISystemModuleAuthorizationService _systemAuthorization;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUserService;
@@ -37,6 +38,7 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         IRepository<Sprint> sprintRepo,
         IRepository<TaskItem> taskRepo,
         IRepository<ProjectMember> memberRepo,
+        IRepository<OrganizationMemberCapacityProfile> capacityProfileRepo,
         IRepository<SystemModulePermission> systemPermRepo,
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
@@ -49,6 +51,7 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         _sprintRepo = sprintRepo;
         _taskRepo = taskRepo;
         _memberRepo = memberRepo;
+        _capacityProfileRepo = capacityProfileRepo;
         _systemAuthorization = systemAuthorization ?? new SystemModuleAuthorizationService(systemPermRepo);
         _unitOfWork = unitOfWork;
         _currentUserService = currentUserService;
@@ -89,7 +92,7 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
         if (proposedTasks.Count == 0)
             return Result.Failure<ErumiRoadmapChatResponseDto>("Không lập được task có thể duyệt từ mục tiêu này.", 422);
 
-        var workload = await CalculateWorkloadImpactsAsync(members, proposedTasks, ct);
+        var workload = await CalculateWorkloadImpactsAsync(project.OrganizationId, members, proposedTasks, ct);
         var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero);
         var end = start.AddDays(Math.Clamp(model.DurationDays, 7, 42));
         var snapshotId = Guid.NewGuid();
@@ -237,6 +240,14 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
                     ReporterId = userId.Value,
                     Status = "Todo"
                 };
+                if (task.AssigneeId.HasValue)
+                {
+                    task.Assignees.Add(new TaskAssignment
+                    {
+                        UserId = task.AssigneeId.Value,
+                        AssignedByUserId = userId.Value
+                    });
+                }
                 await _taskRepo.AddAsync(task, ct);
                 taskIds.Add(task.Id);
             }
@@ -363,22 +374,49 @@ public class ErumiRoadmapAiService : IErumiRoadmapAiService
     }
 
     private async Task<IReadOnlyList<ErumiWorkloadImpactDto>> CalculateWorkloadImpactsAsync(
-        IReadOnlyList<ProjectMember> members, IReadOnlyList<ErumiTaskProposalDto> tasks, CancellationToken ct)
+        Guid? organizationId,
+        IReadOnlyList<ProjectMember> members,
+        IReadOnlyList<ErumiTaskProposalDto> tasks,
+        CancellationToken ct)
     {
-        var assigned = await _taskRepo.GetQueryable().AsNoTracking()
-            .Where(x => x.AssigneeId != null && x.Status != "Done" && x.Status != "Completed" && x.Status != "Cancelled")
-            .GroupBy(x => x.AssigneeId!.Value)
-            .Select(x => new { UserId = x.Key, Hours = x.Sum(task => task.EstimatedHours ?? 0) })
-            .ToDictionaryAsync(x => x.UserId, x => x.Hours, ct);
+        var memberIds = members.Select(item => item.UserId).ToHashSet();
+        var openTasks = await _taskRepo.GetQueryable()
+            .AsNoTracking()
+            .Include(item => item.Assignees)
+            .Where(item => item.Status != "Done" && item.Status != "Completed" && item.Status != "Cancelled" &&
+                           (item.AssigneeId != null && memberIds.Contains(item.AssigneeId.Value) ||
+                            item.Assignees.Any(assignment => memberIds.Contains(assignment.UserId))))
+            .Select(item => new
+            {
+                item.AssigneeId,
+                Hours = item.EstimatedHours ?? 0,
+                AssigneeIds = item.Assignees.Select(assignment => assignment.UserId).ToArray()
+            })
+            .ToListAsync(ct);
+        var assigned = memberIds.ToDictionary(
+            userId => userId,
+            userId => openTasks
+                .Where(item => item.AssigneeId == userId || item.AssigneeIds.Contains(userId))
+                .Sum(item => item.Hours));
+        var capacities = organizationId.HasValue
+            ? await _capacityProfileRepo.GetQueryable()
+                .AsNoTracking()
+                .Where(item => item.OrganizationId == organizationId.Value && memberIds.Contains(item.UserId))
+                .ToDictionaryAsync(item => item.UserId, item => item.WeeklyCapacityHours, ct)
+            : new Dictionary<Guid, decimal>();
         return members.Select(member =>
         {
             var current = assigned.GetValueOrDefault(member.UserId);
             var added = tasks.Where(x => x.RecommendedAssigneeId == member.UserId).Sum(x => x.EstimatedHours);
-            var overloaded = current + added > 40;
+            var hasDeclaredCapacity = capacities.TryGetValue(member.UserId, out var weeklyCapacity) && weeklyCapacity > 0;
+            var deliveryCapacity = hasDeclaredCapacity ? weeklyCapacity * 0.9m : 0m;
+            var overloaded = !hasDeclaredCapacity || current + added > deliveryCapacity;
             return new ErumiWorkloadImpactDto(member.UserId, member.User?.FullName ?? "Thành viên", member.Role,
                 current, added, overloaded, overloaded
-                    ? "Vượt ngưỡng 40 giờ công đang mở; cần đổi người hoặc giảm phạm vi."
-                    : "Chưa vượt ngưỡng giờ công; vẫn cần kiểm tra lịch và tải đa dự án trước khi giao.");
+                    ? hasDeclaredCapacity
+                        ? $"Vượt {deliveryCapacity:0.#} giờ giao hàng/tuần sau khi giữ 10% cho review và điều phối; cần đổi người hoặc giảm phạm vi."
+                        : "Chưa có capacity được thành viên khai báo; không được coi lịch trống là giờ có thể giao."
+                    : $"Trong ngưỡng {deliveryCapacity:0.#} giờ giao hàng/tuần đã khai báo; vẫn cần kiểm tra availability theo tuần trước khi giao.");
         }).ToList();
     }
 

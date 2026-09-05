@@ -22,10 +22,11 @@ Runbook này chỉ thay cho **phần 3 — Prompt test AI Native**. Phần 1–2
 | D04 | Một Wiki có section; một Group có quyền tạo Poll; một Meeting có transcript |
 | D05 | Một tài khoản Member chỉ có quyền đọc/phân tích, không có quyền mutation |
 | D06 | Cách fault-inject provider ở local/dev hoặc một provider chủ động tắt; không phá/xóa API key thật |
+| D07 | Một chuỗi Task thật phủ Todo chưa giao, InProgress, OnHold, InReview, reviewer trả lại, Done đã duyệt và Cancelled |
 
 ### Manifest seed đã kiểm chứng cho demo tốt nghiệp
 
-Khi `Seed:UseRichDemoSeed=true`, các dữ kiện sau được tạo từ database thật và được khóa bằng `RichDemoSeedTests.SeedAsync_SatisfiesGraduationDemoManifestD01ThroughD05`:
+Khi `Seed:UseRichDemoSeed=true`, các dữ kiện sau được tạo từ database thật và được khóa bằng `RichDemoSeedTests.SeedAsync_SatisfiesGraduationDemoManifestD01ThroughD07`:
 
 | Mã | Dữ liệu seed nên dùng | Bằng chứng cần nhìn |
 |---|---|---|
@@ -35,6 +36,7 @@ Khi `Seed:UseRichDemoSeed=true`, các dữ kiện sau được tạo từ databa
 | D04 | Wiki **Demo Data Handbook - Qaly 2026**; Group **Nova Retail Pilot War Room**; Meeting Import **Nova Retail Pilot Weekly** | Wiki có section/source, Group có Owner/Manager và Poll, Meeting Import có transcript + action-item mapping |
 | D05 | `yen.nhi@qaly.dev` | System role `Member`, Project role `Viewer` trên **Qaly Work OS - Customer Demo**; dùng để kiểm tra P25 read-only hữu ích và không có mutation control |
 | D06 | Không seed lỗi giả vào database | Automated provider-failure contract đã có; manual P26 chỉ PASS khi preview thực sự dùng provider bị tắt/lỗi. Nếu không tạo được điều kiện này thì ghi `NOT_VERIFIED`, không xóa hoặc sửa API key thật |
+| D07 | Project **Qaly Work OS - Customer Demo**; các Task `DEMO-QA 01` → `DEMO-QA 07`; Wiki **Kịch bản phản biện workflow quản lý dự án** | Project bật OnHold/InReview/evidence gate; có checklist, assignee/reviewer độc lập, Pending/Rejected/Approved evidence, time log, dependency, notification và audit transition thật. Dùng Wiki để mở nhanh câu hỏi–trả lời khi thuyết trình |
 
 Seed là idempotent và bổ sung lại baseline còn thiếu; nó không tự xóa Project/Task do lượt manual trước tạo ra. Để replay số đếm từ một baseline tuyệt đối, dùng database demo mới hoặc bản sao sạch rồi chạy migration + seed. Không chạy reset phá hủy trên database có dữ liệu người dùng.
 

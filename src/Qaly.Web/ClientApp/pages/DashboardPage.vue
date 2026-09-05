@@ -79,10 +79,11 @@ const nextTaskDetail = computed(() => {
   return `Gần nhất: ${new Date(nextDueTask.value.dueDate).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
 })
 const averageTeamCapacity = computed(() => {
-  if (!team.value.length) return 0
-  return Math.round(team.value.reduce((sum, member) => sum + member.capacityPercent, 0) / team.value.length)
+  const declaredMembers = team.value.filter(member => member.hasDeclaredCapacity)
+  if (!declaredMembers.length) return 0
+  return Math.round(declaredMembers.reduce((sum, member) => sum + member.capacityPercent, 0) / declaredMembers.length)
 })
-const overloadedTeamCount = computed(() => team.value.filter(member => member.capacityPercent >= 90).length)
+const overloadedTeamCount = computed(() => team.value.filter(member => member.hasDeclaredCapacity && member.capacityPercent >= 90).length)
 const strategicOrganizationScopes = computed(() => {
   const scopes = new Map<string, string>()
   for (const project of projects.value) {
@@ -110,9 +111,25 @@ const tooltipY = ref(0)
 // The chart has one percent axis, so both the bars and the connecting line must
 // represent the same canonical metric.  Previously the line plotted task count
 // on this percent axis, which made a valid dataset look incorrect.
-const chartProjects = computed(() =>
-  projects.value.filter(project => project.status !== 'Archived').slice(0, 5),
-)
+const chartProjects = computed(() => {
+  const active = projects.value.filter(project => project.status !== 'Archived')
+  // A dashboard chart should explain ongoing delivery, not be dominated by the newest
+  // empty Projects. Mixed projects (some Done, some remaining) are the most informative;
+  // projects with no Task stay available on the Projects page but rank last here.
+  return active
+    .slice()
+    .sort((left, right) => {
+      const leftMixed = left.completedTaskCount > 0 && left.completedTaskCount < left.taskCount ? 1 : 0
+      const rightMixed = right.completedTaskCount > 0 && right.completedTaskCount < right.taskCount ? 1 : 0
+      if (leftMixed !== rightMixed) return rightMixed - leftMixed
+      const leftHasWork = left.taskCount > 0 ? 1 : 0
+      const rightHasWork = right.taskCount > 0 ? 1 : 0
+      if (leftHasWork !== rightHasWork) return rightHasWork - leftHasWork
+      if (left.taskCount !== right.taskCount) return right.taskCount - left.taskCount
+      return left.name.localeCompare(right.name, 'vi')
+    })
+    .slice(0, 5)
+})
 
 const normalizedProgress = (value: number | null | undefined) =>
   Math.min(100, Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0))

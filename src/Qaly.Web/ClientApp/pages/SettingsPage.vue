@@ -824,7 +824,7 @@ const userInitials = computed(() => {
                   <input type="checkbox" v-model="enableInReview" />
                   <div class="checkbox-info">
                     <strong>Kích hoạt cột Đang duyệt (In Review)</strong>
-                    <p>Kích hoạt luồng duyệt minh chứng. Nhiệm vụ sẽ đi qua duyệt của Manager trước khi sang Done.</p>
+                    <p>Nhiệm vụ phải qua Đang duyệt trước khi người review hoặc quản lý xác nhận hoàn thành. Tắt cột này không cấp quyền tự hoàn thành cho người thực hiện.</p>
                   </div>
                 </label>
 
@@ -832,7 +832,7 @@ const userInitials = computed(() => {
                   <input type="checkbox" v-model="requireEvidenceToDone" />
                   <div class="checkbox-info">
                     <strong>Ràng buộc tệp minh chứng khi hoàn thành (Require Evidence)</strong>
-                    <p>Yêu cầu người thực hiện bắt buộc phải đính kèm ít nhất 1 tệp tin (Evidence) mới có thể chuyển trạng thái sang Done.</p>
+                    <p>Cần ít nhất 1 tệp minh chứng đã được người có quyền duyệt chấp thuận trước khi hoàn thành; chỉ tải tệp lên là chưa đủ.</p>
                   </div>
                 </label>
 
@@ -840,7 +840,7 @@ const userInitials = computed(() => {
                   <input type="checkbox" v-model="restrictTransitionsToAdmin" />
                   <div class="checkbox-info">
                     <strong>Giới hạn quyền duyệt Done cho Trưởng nhóm/Admin</strong>
-                    <p>Chỉ Quản lý dự án (Manager) hoặc Admin mới được phép kéo thả nhiệm vụ sang Done.</p>
+                    <p>Chỉ người có quyền quản lý dự án được chốt hoàn thành. Nếu tắt, người review độc lập cũng có thể chốt; thành viên làm task vẫn không được tự duyệt.</p>
                   </div>
                 </label>
               </div>

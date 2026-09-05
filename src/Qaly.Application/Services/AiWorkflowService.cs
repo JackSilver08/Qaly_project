@@ -2189,6 +2189,14 @@ public class AiWorkflowService : IAiWorkflowService
                         ReporterId = currentUserId.Value,
                         AssigneeId = assigneeId
                     };
+                    if (assigneeId.HasValue)
+                    {
+                        task.Assignees.Add(new TaskAssignment
+                        {
+                            UserId = assigneeId.Value,
+                            AssignedByUserId = currentUserId.Value
+                        });
+                    }
                     await _taskRepo.AddAsync(task, ct);
                     await _unitOfWork.SaveChangesAsync(ct);
                     createdTaskIds.Add(task.Id);

@@ -227,7 +227,7 @@ export function useTaskActions(
         body: JSON.stringify({
           title: newTaskTitle.value.trim(),
           description: newTaskDescription.value.trim() || null,
-          status: taskBeingEdited.value.status,
+          status: current.status,
           priority: newTaskPriority.value,
           dueDate: newTaskDueDate.value ? new Date(newTaskDueDate.value).toISOString() : null,
           estimatedHours: current.estimatedHours,

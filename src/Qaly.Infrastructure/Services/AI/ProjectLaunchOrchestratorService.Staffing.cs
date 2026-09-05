@@ -40,20 +40,21 @@ public sealed partial class ProjectLaunchOrchestratorService
             .GroupBy(item => item.UserId)
             .Select(group => new { UserId = group.Key, Count = group.Select(item => item.ProjectId).Distinct().Count() })
             .ToDictionaryAsync(item => item.UserId, item => item.Count, ct);
-        var commitmentRows = await _db.TaskItems.AsNoTracking()
-            .Where(item => item.AssigneeId.HasValue && userIds.Contains(item.AssigneeId.Value) &&
-                !item.Project.IsDeleted && !item.IsDeleted &&
-                item.Status != "Done" && item.Status != "Completed" &&
-                (!item.StartDate.HasValue || item.StartDate < windowEnd) && (!item.DueDate.HasValue || item.DueDate >= windowStart))
-            .OrderBy(item => item.AssigneeId)
-            .ThenBy(item => item.StartDate)
-            .ThenBy(item => item.DueDate)
-            .ThenBy(item => item.Id)
-            .Select(item => new CommitmentFacts(
-                item.AssigneeId!.Value,
-                item.StartDate,
-                item.DueDate,
-                item.EstimatedHours ?? 8))
+        var commitmentRows = await _db.TaskAssignments.AsNoTracking()
+            .Where(assignment => userIds.Contains(assignment.UserId) &&
+                !assignment.TaskItem.Project.IsDeleted && !assignment.TaskItem.IsDeleted &&
+                assignment.TaskItem.Status != "Done" && assignment.TaskItem.Status != "Completed" &&
+                (!assignment.TaskItem.StartDate.HasValue || assignment.TaskItem.StartDate < windowEnd) &&
+                (!assignment.TaskItem.DueDate.HasValue || assignment.TaskItem.DueDate >= windowStart))
+            .OrderBy(assignment => assignment.UserId)
+            .ThenBy(assignment => assignment.TaskItem.StartDate)
+            .ThenBy(assignment => assignment.TaskItem.DueDate)
+            .ThenBy(assignment => assignment.TaskItemId)
+            .Select(assignment => new CommitmentFacts(
+                assignment.UserId,
+                assignment.TaskItem.StartDate,
+                assignment.TaskItem.DueDate,
+                assignment.TaskItem.EstimatedHours ?? 8))
             .ToListAsync(ct);
         var commitments = commitmentRows
             .GroupBy(item => item.UserId)
@@ -375,7 +376,8 @@ public sealed partial class ProjectLaunchOrchestratorService
             item.TimeZoneId,
             item.CapacityState,
             [$"qaly://organization/member-capacity/{item.UserId}", $"qaly://organization/member-skill-aggregate/{item.UserId}", $"qaly://organization/member-professional-profile/{item.UserId}"],
-            item.WeeklyCapacity.Select(ToWeeklyCapacityDto).ToArray());
+            item.WeeklyCapacity.Select(ToWeeklyCapacityDto).ToArray(),
+            item.ProfessionalProfiles.OrderBy(profile => profile, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
     private static ProjectWeeklyCapacityDto[] BuildProportionalWeeklyAllocation(

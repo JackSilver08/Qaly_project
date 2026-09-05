@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const includeAi = process.argv.includes('--ai')
+const noOpen = process.argv.includes('--no-open')
 const certPath = resolve(root, '.tmp', 'qaly-vite-dev.pfx')
 const certPassword = 'qaly-local-dev'
 const children = []
@@ -191,7 +192,11 @@ async function main() {
   console.log('[Qaly] Ứng dụng: https://localhost:5005')
   console.log('[Qaly] Frontend HMR: https://localhost:5173')
   console.log('[Qaly] Nhấn Ctrl+C để dừng frontend/backend. Docker được giữ lại cho lần chạy sau.\n')
-  openBrowser('https://localhost:5005')
+  if (noOpen) {
+    console.log('[Qaly] Không tự mở trình duyệt (--no-open). Hãy mở https://localhost:5005 khi cần.\n')
+  } else {
+    openBrowser('https://localhost:5005')
+  }
 }
 
 process.on('SIGINT', () => shutdown(0))

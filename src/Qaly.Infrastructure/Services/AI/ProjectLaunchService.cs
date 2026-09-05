@@ -218,7 +218,10 @@ public sealed class ProjectLaunchService : IProjectLaunchService
             TargetTimebox = review.TargetTimebox ?? InferTargetTimebox(userSignals),
             PrimaryAudience = review.PrimaryAudience ?? InferPrimaryAudience(userSignals)
         };
-        review = ApplyNaturalLanguageReviewSignals(review, request.Message, organizationSkills);
+        // The submit caption is not another natural-language edit. Explicit fields in the
+        // current validated form win over inferred signals (including a guessed Project name).
+        if (!hasCompleteReviewForm)
+            review = ApplyNaturalLanguageReviewSignals(review, request.Message, organizationSkills);
         output = review.Output;
         var questions = BuildQuestions(
             request,

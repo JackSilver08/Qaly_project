@@ -11,7 +11,7 @@ namespace Qaly.UnitTests;
 public sealed class RichDemoSeedTests
 {
     [Fact]
-    public async Task SeedAsync_SatisfiesGraduationDemoManifestD01ThroughD05()
+    public async Task SeedAsync_SatisfiesGraduationDemoManifestD01ThroughD07()
     {
         await using var db = new QalyDbContext(new DbContextOptionsBuilder<QalyDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -41,9 +41,29 @@ public sealed class RichDemoSeedTests
             .Should().BeTrue();
         (await db.ProjectMembers.CountAsync(item => item.ProjectId == demoProject.Id))
             .Should().BeGreaterThanOrEqualTo(5);
+        (await db.OrganizationMembers.AnyAsync(item =>
+            item.OrganizationId == demoOrganization.Id &&
+            (item.Role == "Admin" || item.Role == "Manager")))
+            .Should().BeFalse("demo memberships must use the canonical organization role vocabulary");
+        (await db.OrganizationMembers.SingleAsync(item =>
+            item.OrganizationId == demoOrganization.Id && item.UserId == demoOrganization.OwnerId))
+            .Role.Should().Be("Owner");
         (await db.TaskItems.AnyAsync(item =>
             item.ProjectId == demoProject.Id && item.DueDate != null && item.EstimatedHours > 0))
             .Should().BeTrue();
+        (await db.TaskItems.AnyAsync(item =>
+            item.Project.OrganizationId == demoOrganization.Id &&
+            item.AssigneeId != null &&
+            !item.Assignees.Any(assignment => assignment.UserId == item.AssigneeId)))
+            .Should().BeFalse("the primary assignee is part of the canonical assignment set");
+        (await db.TaskAssignments.AnyAsync(item =>
+            item.TaskItem.Project.OrganizationId == demoOrganization.Id &&
+            !item.TaskItem.Project.Members.Any(member => member.UserId == item.UserId)))
+            .Should().BeFalse("a task cannot be assigned to a user outside its project");
+        (await db.TaskItems.AnyAsync(item =>
+            item.Project.OrganizationId == demoOrganization.Id &&
+            item.Status == "Done" && item.ReviewerId == null))
+            .Should().BeFalse("completed demo tasks need canonical review attribution");
         (await db.TimeEntries.AnyAsync(item => item.Task.ProjectId == demoProject.Id))
             .Should().BeTrue();
 
@@ -64,6 +84,12 @@ public sealed class RichDemoSeedTests
         (await db.OrganizationMemberCapacityProfiles.CountAsync(item =>
             item.OrganizationId == demoOrganization.Id && item.WeeklyCapacityHours > 0))
             .Should().Be(12);
+        (await db.OrganizationMembers.AnyAsync(member =>
+            member.OrganizationId == demoOrganization.Id &&
+            member.User.Email.EndsWith("@qaly.dev") &&
+            !db.OrganizationMemberCapacityProfiles.Any(profile =>
+                profile.OrganizationId == member.OrganizationId && profile.UserId == member.UserId)))
+            .Should().BeFalse("every seeded demo member has an explicit capacity declaration");
         (await db.MemberAvailabilityWindows.AnyAsync(item =>
             item.Profile.OrganizationId == demoOrganization.Id &&
             item.Kind == MemberAvailabilityWindow.Unavailable))
@@ -121,8 +147,97 @@ public sealed class RichDemoSeedTests
             ["thanh.tam@qaly.dev"] = "Reviewer",
             ["mai.phuong@qaly.dev"] = "Member",
             ["yen.nhi@qaly.dev"] = "Viewer",
-            ["viet.long@qaly.dev"] = "Customer"
+            ["viet.long@qaly.dev"] = "Customer",
+            ["gia.khang@qaly.dev"] = "Developer"
         });
+        // D07: canonical project-management defense states are backed by real rows.
+        demoProject.EnableOnHold.Should().BeTrue();
+        demoProject.EnableInReview.Should().BeTrue();
+        demoProject.RequireEvidenceToDone.Should().BeTrue();
+        demoProject.RestrictTransitionsToAdmin.Should().BeFalse();
+
+        var defenseTasks = await db.TaskItems
+            .Where(item => item.ProjectId == demoProject.Id && item.Title.StartsWith("DEMO-QA "))
+            .Include(item => item.Assignees)
+            .Include(item => item.AcceptanceChecklist)
+            .Include(item => item.Attachments)
+            .OrderBy(item => item.Title)
+            .ToListAsync();
+        defenseTasks.Should().HaveCount(7);
+        defenseTasks.Select(item => item.Status).Should().Contain([
+            "Todo", "InProgress", "OnHold", "InReview", "Done", "Cancelled"
+        ]);
+
+        var unassignedTask = defenseTasks.Single(item => item.Title.Contains("Task mới chờ phân công"));
+        unassignedTask.AssigneeId.Should().BeNull("calendar gaps are not treated as declared capacity");
+        unassignedTask.Assignees.Should().BeEmpty();
+
+        var reviewTask = defenseTasks.Single(item => item.Title.Contains("Chờ reviewer duyệt evidence"));
+        reviewTask.AssigneeId.Should().NotBeNull();
+        reviewTask.ReviewerId.Should().NotBeNull();
+        (reviewTask.ReviewerId == reviewTask.AssigneeId).Should().BeFalse();
+        reviewTask.AcceptanceChecklist.Should().NotBeEmpty();
+        reviewTask.Attachments.Should().ContainSingle(item =>
+            item.IsEvidence && item.EvidenceApprovalStatus == "Pending");
+
+        var returnedTask = defenseTasks.Single(item => item.Title.Contains("Reviewer đã trả lại để sửa"));
+        returnedTask.Status.Should().Be("InProgress");
+        returnedTask.Attachments.Should().ContainSingle(item =>
+            item.IsEvidence && item.EvidenceApprovalStatus == "Rejected" &&
+            item.EvidenceReviewedById == returnedTask.ReviewerId);
+        (await db.AuditLogs.AnyAsync(item =>
+            item.EntityType == nameof(TaskItem) && item.EntityId == returnedTask.Id.ToString() &&
+            item.ChangesJson != null && item.ChangesJson.Contains("\"from\":\"InReview\"") &&
+            item.ChangesJson.Contains("\"to\":\"InProgress\"")))
+            .Should().BeTrue();
+
+        var completedTask = defenseTasks.Single(item => item.Title.Contains("Hoàn thành sau duyệt hợp lệ"));
+        completedTask.ReviewerId.Should().NotBeNull();
+        (completedTask.ReviewerId == completedTask.AssigneeId).Should().BeFalse();
+        completedTask.AcceptanceChecklist.Should().NotBeEmpty()
+            .And.OnlyContain(item => item.IsCompleted);
+        completedTask.Attachments.Should().ContainSingle(item =>
+            item.IsEvidence && item.EvidenceApprovalStatus == "Approved" &&
+            item.EvidenceReviewedById == completedTask.ReviewerId);
+        (await db.TaskCompletionAttributions.AnyAsync(item =>
+            item.TaskItemId == completedTask.Id && item.Status == TaskCompletionAttribution.Confirmed))
+            .Should().BeTrue();
+
+        var blockedTask = defenseTasks.Single(item => item.Title.Contains("Tạm dừng vì phụ thuộc bên ngoài"));
+        blockedTask.Status.Should().Be("OnHold");
+        blockedTask.DueDate.Should().BeBefore(DateTimeOffset.UtcNow);
+        (await db.TaskComments.AnyAsync(item =>
+            item.TaskItemId == blockedTask.Id && item.Content.Contains("API key sandbox")))
+            .Should().BeTrue();
+        (await db.TaskDependencies.CountAsync(item =>
+            defenseTasks.Select(task => task.Id).Contains(item.PredecessorId) &&
+            defenseTasks.Select(task => task.Id).Contains(item.SuccessorId)))
+            .Should().Be(2);
+        (await db.Notifications.AnyAsync(item => item.IdempotencyKey == "demo:defense:review-requested"))
+            .Should().BeTrue();
+        (await db.Notifications.AnyAsync(item => item.IdempotencyKey == "demo:defense:changes-requested"))
+            .Should().BeTrue();
+        (await db.WikiPages.AnyAsync(item =>
+            item.ProjectId == demoProject.Id && item.Title == "Kịch bản phản biện workflow quản lý dự án"))
+            .Should().BeTrue();
+
+        // D08: the dashboard has a real portfolio mix instead of five near-empty 0% bars.
+        var dashboardTasks = await db.TaskItems
+            .Where(item => item.Title.StartsWith(DataSeeder.DashboardScenarioPrefix))
+            .ToListAsync();
+        dashboardTasks.Should().HaveCount(12);
+        dashboardTasks.Select(item => item.Status).Should().Contain(["Done", "Todo", "InProgress", "InReview", "OnHold"]);
+        var seededActiveProjectIds = await db.Projects
+            .Where(item => item.OrganizationId == demoOrganization.Id && item.Status == "Active")
+            .Select(item => item.Id)
+            .ToListAsync();
+        foreach (var projectId in seededActiveProjectIds)
+        {
+            (await db.TaskItems.AnyAsync(item => item.ProjectId == projectId && item.Status == "Done"))
+                .Should().BeTrue("every active presentation Project needs visible completed work");
+            (await db.TaskItems.AnyAsync(item => item.ProjectId == projectId && item.Status != "Done" && item.Status != "Cancelled"))
+                .Should().BeTrue("every active presentation Project needs visible work remaining");
+        }
     }
 
     [Fact]
@@ -269,7 +384,17 @@ public sealed class RichDemoSeedTests
             ProfessionalDefinitions = await db.ProfessionalProfileDefinitions.CountAsync(),
             ProfessionalAssignments = await db.OrganizationMemberProfessionalProfiles.CountAsync(),
             Availability = await db.MemberAvailabilityWindows.CountAsync(),
-            Tasks = await db.TaskItems.CountAsync()
+            ProjectMembers = await db.ProjectMembers.CountAsync(),
+            TaskAssignments = await db.TaskAssignments.CountAsync(),
+            Tasks = await db.TaskItems.CountAsync(),
+            Checklists = await db.TaskAcceptanceChecklistItems.CountAsync(),
+            Attachments = await db.TaskAttachments.CountAsync(),
+            Comments = await db.TaskComments.CountAsync(),
+            Dependencies = await db.TaskDependencies.CountAsync(),
+            TimeEntries = await db.TimeEntries.CountAsync(),
+            AuditLogs = await db.AuditLogs.CountAsync(),
+            Notifications = await db.Notifications.CountAsync(),
+            Wikis = await db.WikiPages.CountAsync()
         };
 
         await seeder.SeedAsync();
@@ -283,7 +408,17 @@ public sealed class RichDemoSeedTests
             ProfessionalDefinitions = await db.ProfessionalProfileDefinitions.CountAsync(),
             ProfessionalAssignments = await db.OrganizationMemberProfessionalProfiles.CountAsync(),
             Availability = await db.MemberAvailabilityWindows.CountAsync(),
-            Tasks = await db.TaskItems.CountAsync()
+            ProjectMembers = await db.ProjectMembers.CountAsync(),
+            TaskAssignments = await db.TaskAssignments.CountAsync(),
+            Tasks = await db.TaskItems.CountAsync(),
+            Checklists = await db.TaskAcceptanceChecklistItems.CountAsync(),
+            Attachments = await db.TaskAttachments.CountAsync(),
+            Comments = await db.TaskComments.CountAsync(),
+            Dependencies = await db.TaskDependencies.CountAsync(),
+            TimeEntries = await db.TimeEntries.CountAsync(),
+            AuditLogs = await db.AuditLogs.CountAsync(),
+            Notifications = await db.Notifications.CountAsync(),
+            Wikis = await db.WikiPages.CountAsync()
         };
         countsAfterSecondSeed.Should().BeEquivalentTo(countsBeforeSecondSeed);
     }

@@ -65,6 +65,8 @@ const {
   isProjectAdmin,
   loadDashboard,
   selectTaskInProject,
+  nextStatuses,
+  displayStatus,
 } = useDashboardContext();
 const route = useRoute();
 const router = useRouter();
@@ -832,7 +834,7 @@ async function handleQuickCreateTask() {
 
 // Action: Inline Update Task Status (For members)
 async function updateTaskStatusInline(task: DashboardTask, newStatus: string) {
-  if (task.status === newStatus) return;
+  if (task.status === newStatus || !nextStatuses(task).includes(newStatus)) return;
   try {
     await apiCommand(`/api/tasks/${task.id}/status`, {
       method: "PATCH",
@@ -2003,6 +2005,7 @@ const handleRollbackErumiSnapshot = async () => {
                   class="task-inline-status-select"
                   :aria-label="`Trạng thái nhiệm vụ ${task.title}`"
                   :value="task.status"
+                  :disabled="nextStatuses(task).length === 0"
                   @change="
                     updateTaskStatusInline(
                       task,
@@ -2010,10 +2013,8 @@ const handleRollbackErumiSnapshot = async () => {
                     )
                   "
                 >
-                  <option value="Todo">Todo</option>
-                  <option value="InProgress">InProgress</option>
-                  <option value="InReview">InReview</option>
-                  <option value="Done">Done</option>
+                  <option :value="task.status">{{ displayStatus(task.status) }}</option>
+                  <option v-for="status in nextStatuses(task)" :key="status" :value="status">{{ displayStatus(status) }}</option>
                 </select>
               </div>
             </div>

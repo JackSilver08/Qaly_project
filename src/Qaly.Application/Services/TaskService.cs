@@ -209,7 +209,7 @@ public class TaskService : ITaskService
             return Result.NotFound<KanbanMoveResultDto>();
         }
 
-        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
+        if (!await CanChangeStatusAsync(task, normalizedToStatus, ct))
         {
             return Result.Forbidden<KanbanMoveResultDto>();
         }
@@ -322,7 +322,8 @@ public class TaskService : ITaskService
 
         var query = _taskAccessPolicy.ApplyVisibilityFilter(TaskDetailsQuery())
             .AsNoTracking()
-            .Where(t => t.AssigneeId == assigneeId);
+            .Where(t => t.AssigneeId == assigneeId ||
+                        t.Assignees.Any(assignment => assignment.UserId == assigneeId));
 
         var totalCount = await query.CountAsync(ct);
         var items = await query
@@ -864,7 +865,7 @@ public class TaskService : ITaskService
             return Result.Failure("Không tìm thấy nhiệm vụ.", 404);
         }
 
-        if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
+        if (!await CanChangeStatusAsync(task, newStatus, ct))
         {
             return Result.Failure("Truy cập bị từ chối.", 403);
         }
@@ -1091,7 +1092,7 @@ public class TaskService : ITaskService
 
         foreach (var task in tasks)
         {
-            if (!await _taskAccessPolicy.CanManageTaskAsync(task, ct))
+            if (!await CanChangeStatusAsync(task, normalizedStatus, ct))
             {
                 return Result.Forbidden("You cannot change one or more selected tasks.");
             }
@@ -2582,40 +2583,41 @@ public class TaskService : ITaskService
         return Result.Success(new ProjectWorkloadDto(projectId, workloads));
     }
 
+    private async Task<bool> CanChangeStatusAsync(TaskItem task, string newStatus, CancellationToken ct)
+    {
+        if (await _taskAccessPolicy.CanManageTaskAsync(task, ct)) return true;
+        // Review authority permits deciding a submitted task, not editing arbitrary fields.
+        return string.Equals(task.Status, "InReview", StringComparison.OrdinalIgnoreCase) &&
+               (IsDone(newStatus) || string.Equals(newStatus, "InProgress", StringComparison.OrdinalIgnoreCase)) &&
+               await _taskAccessPolicy.CanReviewTaskAsync(task, ct);
+    }
+
     private async Task<Result> ValidateTransitionAsync(TaskItem task, string oldStatus, string newStatus, CancellationToken ct)
     {
-        if (task.Project == null) return Result.Success();
+        if (task.Project == null) return Result.Forbidden("Không xác định được quyền trong dự án.");
+        if (string.Equals(oldStatus, newStatus, StringComparison.OrdinalIgnoreCase)) return Result.Success();
+
+        if (newStatus == "OnHold" && !task.Project.EnableOnHold ||
+            newStatus == "InReview" && !task.Project.EnableInReview)
+            return Result.Failure("Trạng thái này chưa được bật trong quy trình dự án.", 400);
+
+        if (IsDone(newStatus))
+        {
+            if (task.Project.EnableInReview && !string.Equals(oldStatus, "InReview", StringComparison.OrdinalIgnoreCase))
+                return Result.Failure("Cần chuyển nhiệm vụ sang Đang duyệt trước khi xác nhận hoàn thành.", 400);
+
+            var canComplete = task.Project.RestrictTransitionsToAdmin
+                ? await _taskAccessPolicy.CanManageProjectAsync(task.ProjectId, task.Project.OwnerId, ct)
+                : await _taskAccessPolicy.CanReviewTaskAsync(task, ct);
+            if (!canComplete)
+                return Result.Forbidden(task.Project.RestrictTransitionsToAdmin
+                    ? "Chỉ người có quyền quản lý dự án mới được xác nhận hoàn thành."
+                    : "Bạn không có quyền duyệt hoàn thành nhiệm vụ này. Hãy gửi Đang duyệt để người review hoặc quản lý xác nhận.");
+        }
 
         if (task.Project.RequireEvidenceToDone && RequiresApprovedEvidence(oldStatus, newStatus) && !await HasApprovedEvidenceAsync(task.Id, ct))
         {
             return Result.Failure("Không thể đánh dấu hoàn thành vì chưa có minh chứng được duyệt.", 400);
-        }
-
-        if (task.Project.RestrictTransitionsToAdmin && IsDone(newStatus) && !IsDone(oldStatus))
-        {
-            var currentUserId = _currentUserService.UserId;
-            if (currentUserId == null)
-            {
-                return Result.Failure("Yêu cầu đăng nhập.", 401);
-            }
-
-            var isAdmin = string.Equals(_currentUserService.Role, "Admin", StringComparison.OrdinalIgnoreCase);
-            var isOwner = task.Project.OwnerId == currentUserId.Value;
-            var isManager = false;
-
-            if (!isAdmin && !isOwner)
-            {
-                var projectRole = await _memberRepo.GetQueryable()
-                    .Where(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId.Value)
-                    .Select(member => member.Role)
-                    .FirstOrDefaultAsync(ct);
-                isManager = string.Equals(projectRole, "Manager", StringComparison.OrdinalIgnoreCase);
-            }
-
-            if (!isAdmin && !isOwner && !isManager)
-            {
-                return Result.Failure("Chỉ Quản lý dự án hoặc Chủ sở hữu mới có quyền hoàn thành nhiệm vụ.", 403);
-            }
         }
 
         return Result.Success();

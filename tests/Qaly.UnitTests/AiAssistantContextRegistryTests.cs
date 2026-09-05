@@ -252,8 +252,11 @@ public sealed class AiAssistantContextRegistryTests
             item.SourceId == AiAssistantContextContract.GroupContextSource);
     }
 
-    [Fact]
-    public async Task ResolveAsync_ExplicitGroupReadWithProjectSelected_StillUsesGroupScope()
+    [Theory]
+    [InlineData("Tóm tắt Group đang mở và các trao đổi gần đây.")]
+    [InlineData("Tom tat nhom dang mo.")]
+    [InlineData("Tóm tắt nhóm đang mở.")]
+    public async Task ResolveAsync_ExplicitGroupReadWithProjectSelected_StillUsesGroupScope(string message)
     {
         await using var db = CreateContext();
         var owner = CreateUser("Owner");
@@ -263,7 +266,7 @@ public sealed class AiAssistantContextRegistryTests
         await db.SaveChangesAsync();
 
         var result = await CreateRegistry(db, owner.Id).ResolveAsync(new AiAssistantTurnRequestDto(
-            "Tóm tắt Group đang mở và các trao đổi gần đây.",
+            message,
             new AiAssistantClientContextDto(
                 Route: $"/groups/{group.Id}",
                 Module: "groups",
@@ -460,6 +463,68 @@ public sealed class AiAssistantContextRegistryTests
             item.CapabilityId == AiAssistantContextContract.WikiBriefTaskCapability ||
             item.CapabilityId == AiAssistantContextContract.ProjectDigestCapability ||
             item.CapabilityId == AiProjectOrchestrationContract.ExecuteCapabilityId);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DiscoverAndResolve_SelectedProjectOnAmbientGroup_KeepProjectCapabilities(bool ownsGroup)
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var outsider = CreateUser("Other");
+        var project = CreateProject(owner.Id);
+        var group = new WorkGroup { Name = "Ambient group", OwnerId = ownsGroup ? owner.Id : outsider.Id };
+        db.AddRange(owner, outsider, project, group);
+        await db.SaveChangesAsync();
+        var request = new AiAssistantTurnRequestDto("Soạn 4 Task cho Project đang chọn",
+            new AiAssistantClientContextDto(Route: $"/groups/{group.Id}", Module: "groups",
+                ProjectId: project.Id, EntityType: "group", EntityId: group.Id));
+        var registry = CreateRegistry(db, owner.Id);
+
+        var discovery = await registry.DiscoverAsync(request);
+        var resolved = await registry.ResolveAsync(request);
+
+        discovery.IsSuccess.Should().BeTrue(discovery.Error);
+        discovery.Data!.Capabilities.Should().Contain(item => item.CapabilityId == AiAssistantContextContract.TaskCreateCapability);
+        discovery.Data.Capabilities.Should().NotContain(item => item.CapabilityId == AiAssistantContextContract.GroupPollCapability);
+        resolved.IsSuccess.Should().BeTrue(resolved.Error);
+        resolved.Data!.Sources.Should().Contain(item => item.SourceId == AiAssistantContextContract.ProjectSummarySource);
+        resolved.Data.Sources.Should().NotContain(item => item.SourceId == AiAssistantContextContract.GroupContextSource);
+    }
+
+    [Fact]
+    public async Task DiscoverAndResolve_ExplicitPrivateGroupRead_DoesNotBorrowSelectedProjectPermission()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var outsider = CreateUser("Other");
+        var project = CreateProject(owner.Id);
+        var group = new WorkGroup { Name = "Private group", OwnerId = outsider.Id };
+        db.AddRange(owner, outsider, project, group);
+        await db.SaveChangesAsync();
+        var request = new AiAssistantTurnRequestDto("Tom tat nhom dang mo",
+            new AiAssistantClientContextDto(ProjectId: project.Id, EntityType: "group", EntityId: group.Id));
+        var registry = CreateRegistry(db, owner.Id);
+        (await registry.DiscoverAsync(request)).IsSuccess.Should().BeFalse();
+        (await registry.ResolveAsync(request)).IsSuccess.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Discover_GroupPollContinuation_UsesSameHistoryAsPlannerDespiteSelectedProject()
+    {
+        await using var db = CreateContext();
+        var owner = CreateUser("Owner");
+        var project = CreateProject(owner.Id);
+        var group = new WorkGroup { Name = "Poll group", OwnerId = owner.Id };
+        db.AddRange(owner, project, group);
+        await db.SaveChangesAsync();
+        var request = new AiAssistantTurnRequestDto("tiếp tục",
+            new AiAssistantClientContextDto(ProjectId: project.Id, EntityType: "group", EntityId: group.Id),
+            History: [new AiChatMessageDto("user", "Soạn Poll trong Group đang mở")]);
+        var result = await CreateRegistry(db, owner.Id).DiscoverAsync(request);
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Data!.Capabilities.Should().Contain(item => item.CapabilityId == AiAssistantContextContract.GroupPollCapability);
     }
 
     private static AiAssistantContextRegistry CreateRegistry(QalyDbContext db, Guid userId)

@@ -367,7 +367,7 @@ watch(
     <div v-else-if="!compact" class="workload-stats">
       <article><span>Task trong dự án</span><strong>{{ totalTasks }}</strong></article>
       <article><span>Giờ ước lượng</span><strong>{{ totalEstimated }}h</strong></article>
-      <article><span>Giờ thực tế</span><strong>{{ totalActual }}h</strong></article>
+      <article><span>Giờ thực tế khai báo trên task</span><strong>{{ totalActual }}h</strong></article>
     </div>
 
     <div v-if="portfolioLoading" class="workload-empty"><Loader2 :size="20" class="spin" /><strong>Đang đối soát portfolio được cấp quyền</strong></div>
@@ -386,7 +386,7 @@ watch(
       <div v-if="!compact" class="capacity-grid">
         <article v-for="member in portfolio.members" :key="member.userId" class="capacity-card" :data-tone="utilizationTone(member)">
           <header>
-            <div class="capacity-person"><UserRound :size="18" /><div><strong>{{ member.fullName }}</strong><span>{{ member.capacityState === 'assumed_default' ? 'Đang dùng mặc định 40h/tuần' : 'Capacity đã khai báo' }}</span></div></div>
+            <div class="capacity-person"><UserRound :size="18" /><div><strong>{{ member.fullName }}</strong><span>{{ member.capacityState === 'missing_declared_capacity' ? 'Chưa khai báo capacity · không dùng lịch trống làm năng lực' : 'Capacity đã khai báo' }}</span></div></div>
             <button type="button" class="icon-button" aria-label="Sửa capacity" @click="openCapacityEditor(member)"><PencilLine :size="15" /></button>
           </header>
           <div class="capacity-meter"><span :style="{ width: `${Math.min(100, member.utilizationPercent)}%` }"></span></div>

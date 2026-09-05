@@ -168,7 +168,7 @@ public partial class DataSeeder
             }
 
             var assignee = assignees[index % assignees.Length];
-            await _context.TaskItems.AddAsync(new TaskItem
+            var task = new TaskItem
             {
                 ProjectId = project.Id,
                 SprintId = definition.Item2.Id,
@@ -186,6 +186,15 @@ public partial class DataSeeder
                 IsPinned = index is 4 or 6,
                 UpvoteCount = definition.Item4 == "Critical" ? 4 : 2,
                 CreatedAt = now.AddDays(definition.Item5)
+            };
+            await _context.TaskItems.AddAsync(task);
+            await _context.TaskAssignments.AddAsync(new TaskAssignment
+            {
+                TaskItemId = task.Id,
+                UserId = assignee.Id,
+                AssignedByUserId = manager.Id,
+                AssignedAt = task.CreatedAt,
+                CreatedAt = task.CreatedAt
             });
             changed = true;
         }

@@ -43,8 +43,6 @@ public sealed partial class ProjectLaunchOrchestratorService
 
             foreach (var reviewer in reviewerCandidates)
             {
-                if (!CombinedSkillsCover(task.RequiredSkillNames, assignee, reviewer))
-                    continue;
                 var reviewerUserId = reviewer?.UserId ?? managerUserId ?? assignee.UserId;
                 if (!CanReserveTimePhasedAssignment(
                         sprint,
@@ -59,11 +57,14 @@ public sealed partial class ProjectLaunchOrchestratorService
 
                 var directMatches = task.RequiredSkillNames.Count(required =>
                     assignee.CoveredSkills.Any(skill => Normalize(skill) == Normalize(required)));
+                var combinedMatches = CombinedSkillCoverageCount(task.RequiredSkillNames, assignee, reviewer);
                 var currentDelivery = allocations.GetValueOrDefault(assignee.UserId)?
                     .Sum(item => item.ProposedDeliveryHours) ?? decimal.MaxValue;
                 choices.Add(new TimePhasedAssignmentChoice(
                     new AssignmentSelection(assignee, reviewer),
                     directMatches,
+                    combinedMatches,
+                    combinedMatches == task.RequiredSkillNames.Count,
                     peakLoad,
                     currentDelivery,
                     reviewer?.UserId == preferredReviewerId));
@@ -71,7 +72,9 @@ public sealed partial class ProjectLaunchOrchestratorService
         }
 
         return choices
-            .OrderByDescending(item => item.DirectSkillMatches)
+            .OrderByDescending(item => item.FullPairCoverage)
+            .ThenByDescending(item => item.DirectSkillMatches)
+            .ThenByDescending(item => item.CombinedSkillMatches)
             .ThenBy(item => item.PeakLoadPercent)
             .ThenBy(item => item.CurrentDeliveryHours)
             .ThenByDescending(item => item.PreferredReviewer)
@@ -215,7 +218,11 @@ public sealed partial class ProjectLaunchOrchestratorService
                 var newHours = week.ProposedDeliveryHours + week.ReviewerCoordinationHours;
                 if (newHours > week.EffectiveAvailableHours + 0.01m)
                     blocking.Add($"Capacity tuần {week.WeekKey} của {member.DisplayName} thiếu {newHours - week.EffectiveAvailableHours:0.##} giờ sau availability, tải Project khác và focus reserve.");
-                if (week.LoadAfterPercent > maxUtilizationPercent + 0.01m)
+                // Existing overload belongs to the source portfolio and must stay visible,
+                // but it cannot invalidate a launch when this plan assigns the person 0h.
+                // CanReserveTimePhasedAssignment still rejects every new hour that would
+                // breach the Rulebook threshold.
+                if (newHours > 0.01m && week.LoadAfterPercent > maxUtilizationPercent + 0.01m)
                     blocking.Add($"Ngưỡng sử dụng tuần {week.WeekKey} của {member.DisplayName} là {week.LoadAfterPercent:0.##}%, vượt Rulebook {maxUtilizationPercent:0.##}%.");
             }
             return member with
@@ -337,6 +344,8 @@ public sealed partial class ProjectLaunchOrchestratorService
     private sealed record TimePhasedAssignmentChoice(
         AssignmentSelection Assignment,
         int DirectSkillMatches,
+        int CombinedSkillMatches,
+        bool FullPairCoverage,
         decimal PeakLoadPercent,
         decimal CurrentDeliveryHours,
         bool PreferredReviewer);

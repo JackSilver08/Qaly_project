@@ -10,6 +10,7 @@ public interface ITaskAccessPolicy
     Task<bool> CanAccessTaskAsync(TaskItem task, CancellationToken ct);
     Task<bool> CanContributeToTaskAsync(TaskItem task, CancellationToken ct);
     Task<bool> CanManageTaskAsync(TaskItem task, CancellationToken ct);
+    Task<bool> CanReviewTaskAsync(TaskItem task, CancellationToken ct);
     Task<bool> CanAccessProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanContributeToProjectAsync(Guid projectId, Guid ownerId, CancellationToken ct);
     Task<bool> CanCreateTaskAsync(Guid projectId, Guid ownerId, CancellationToken ct);

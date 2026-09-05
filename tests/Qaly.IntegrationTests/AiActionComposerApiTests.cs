@@ -30,6 +30,61 @@ public sealed class AiActionComposerApiTests : IClassFixture<IntegrationTestFact
     }
 
     [Fact]
+    public async Task NamedAssigneeAndThreeDeliverables_SurviveConfirmAndCanonicalReloadWithoutDuplication()
+    {
+        var seeded = await SeedScopeAsync(includeViewer: false);
+        var csrf = await GetCsrfTokenAsync(_client);
+        var response = await ComposeAsync(_client, seeded.ProjectId, csrf, $"named-{Guid.NewGuid():N}",
+            prompt: "Tạo 3 task: Sửa đăng nhập, Viết testcase, Kiểm tra thanh toán; giao cho Action Composer Contributor");
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var job = await ReadResultAsync<AiJobCreatedDto>(response);
+        var draftId = await CompleteActionJobAsync(job.JobId);
+        var draft = await GetResultAsync<AiDraftDetailDto>(_client, $"/api/ai/drafts/{draftId}");
+        var plan = draft.WorkingPayload.Deserialize<AiActionPlanDto>(JsonOptions)!;
+        var commands = plan.Options[0].Commands;
+        commands.Select(command => command.Title).Should().Equal("Sửa đăng nhập", "Viết testcase", "Kiểm tra thanh toán");
+        commands.Should().OnlyContain(command => command.AssigneeId != null && command.AssigneeMode == "user_selected");
+        commands.Select(command => command.AssigneeId).Distinct().Should().ContainSingle();
+        commands.Should().OnlyContain(command => !command.Description!.Contains("giao cho"));
+        using (var checkScope = _factory.Services.CreateScope())
+        {
+            var db = checkScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+            (await db.TaskItems.CountAsync(task => task.ProjectId == seeded.ProjectId)).Should().Be(0);
+        }
+        var key = $"confirm-named-{Guid.NewGuid():N}";
+        var confirm = await ConfirmAsync(_client, draftId, draft.WorkingPayload.GetRawText(), draft.RowVersion, key, csrf);
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK, await confirm.Content.ReadAsStringAsync());
+        var receipt = await ReadResultAsync<AiDraftConfirmResultDto>(confirm);
+        receipt.CreatedTaskCount.Should().Be(3);
+        receipt.ActionReceipt!.Status.Should().Be("succeeded");
+        var retry = await ConfirmAsync(_client, draftId, draft.WorkingPayload.GetRawText(), draft.RowVersion, key, csrf);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadResultAsync<AiDraftConfirmResultDto>(retry)).CreatedTaskIds.Should().BeEquivalentTo(receipt.CreatedTaskIds);
+        using var reloadScope = _factory.Services.CreateScope();
+        var reloadDb = reloadScope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        var tasks = await reloadDb.TaskItems.AsNoTracking().Where(task => task.ProjectId == seeded.ProjectId).ToListAsync();
+        tasks.Should().HaveCount(3);
+        tasks.Select(task => task.Title).Should().BeEquivalentTo(commands.Select(command => command.Title));
+        tasks.Should().OnlyContain(task => task.AssigneeId == commands[0].AssigneeId);
+        (await reloadDb.TaskAssignments.CountAsync(assignment => receipt.CreatedTaskIds.Contains(assignment.TaskItemId))).Should().Be(3);
+    }
+
+    [Theory]
+    [InlineData("Tạo 3 task giao cho Action Composer Contributor")]
+    [InlineData("Tạo 1 task sửa login; giao cho người xx")]
+    public async Task MissingContentOrUnknownRecipient_DoesNotEnqueueOrCreateTasks(string prompt)
+    {
+        var seeded = await SeedScopeAsync(false);
+        var csrf = await GetCsrfTokenAsync(_client);
+        var response = await ComposeAsync(_client, seeded.ProjectId, csrf, $"missing-{Guid.NewGuid():N}", prompt: prompt);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<QalyDbContext>();
+        (await db.AiJobs.CountAsync(job => job.ProjectId == seeded.ProjectId)).Should().Be(0);
+        (await db.TaskItems.CountAsync(task => task.ProjectId == seeded.ProjectId)).Should().Be(0);
+    }
+
+    [Fact]
     [Trait("TestId", "TEST-ACTION-01")]
     [Trait("TestId", "TEST-ACTION-07")]
     [Trait("TestId", "TEST-ACTION-09")]

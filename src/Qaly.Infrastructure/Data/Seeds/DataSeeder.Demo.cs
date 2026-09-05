@@ -18,6 +18,16 @@ public partial class DataSeeder
         "fintech-security-2026"
     ];
 
+    private static readonly string[] CurrentDemoProjectCodes =
+    [
+        "qaly-workos-demo",
+        "erumi-local-analytics",
+        "nova-retail-pilot",
+        "field-ops-mobile",
+        "ops-compliance-readiness",
+        "legacy-crm-cleanup"
+    ];
+
     private async Task<bool> EnsureRichDemoSeedAsync()
     {
         if (await HasCurrentDemoSeedAsync())
@@ -25,7 +35,11 @@ public partial class DataSeeder
             var presentationSeedChanged = await EnsurePresentationDemoSeedAsync();
             var aiEvidenceChanged = await EnsureAiNativeDemoEvidenceAsync();
             var professionalProfilesChanged = await EnsureProfessionalProfileDemoSeedAsync();
-            return presentationSeedChanged || aiEvidenceChanged || professionalProfilesChanged;
+            var defenseScenariosChanged = await EnsureProjectManagementDefenseDemoSeedAsync();
+            var dashboardVarietyChanged = await EnsureDashboardPresentationVarietyAsync();
+            var consistencyChanged = await EnsureRichDemoDataConsistencyAsync();
+            return presentationSeedChanged || aiEvidenceChanged || professionalProfilesChanged ||
+                   defenseScenariosChanged || dashboardVarietyChanged || consistencyChanged;
         }
 
         var isDatabaseEmpty =
@@ -48,6 +62,9 @@ public partial class DataSeeder
         await SeedRichDemoDataAsync();
         await EnsureAiNativeDemoEvidenceAsync();
         await EnsureProfessionalProfileDemoSeedAsync();
+        await EnsureProjectManagementDefenseDemoSeedAsync();
+        await EnsureDashboardPresentationVarietyAsync();
+        await EnsureRichDemoDataConsistencyAsync();
         return true;
     }
 
@@ -62,6 +79,126 @@ public partial class DataSeeder
     {
         return await _context.Users.AnyAsync(user => user.Email.EndsWith("@qaly.dev")) ||
                await _context.Projects.IgnoreQueryFilters().AnyAsync(project => LegacyDemoProjectCodes.Contains(project.Code));
+    }
+
+    /// <summary>
+    /// Repairs invariants that older demo seed versions did not persist. The repair is
+    /// deliberately limited to the named demo organization/projects so user-created
+    /// projects are never granted memberships or rewritten by startup seeding.
+    /// </summary>
+    private async Task<bool> EnsureRichDemoDataConsistencyAsync()
+    {
+        var organization = await _context.Organizations
+            .SingleOrDefaultAsync(item => item.Code == "qaly-demo-2026");
+        if (organization == null)
+        {
+            return false;
+        }
+
+        var changed = false;
+        var now = DateTimeOffset.UtcNow;
+        var organizationMembers = await _context.OrganizationMembers
+            .Where(item => item.OrganizationId == organization.Id)
+            .ToListAsync();
+        foreach (var member in organizationMembers)
+        {
+            var normalizedRole = member.UserId == organization.OwnerId
+                ? OrganizationRoleRules.Owner
+                : OrganizationRoleRules.TryNormalizeKnownRole(member.Role, out var normalized)
+                    ? normalized
+                    : member.Role;
+            if (!string.Equals(member.Role, normalizedRole, StringComparison.Ordinal))
+            {
+                member.Role = normalizedRole;
+                member.UpdatedAt = now;
+                changed = true;
+            }
+        }
+
+        var projects = await _context.Projects
+            .IgnoreQueryFilters()
+            .Where(item => item.OrganizationId == organization.Id &&
+                           !item.IsDeleted && CurrentDemoProjectCodes.Contains(item.Code))
+            .ToListAsync();
+        var projectIds = projects.Select(item => item.Id).ToHashSet();
+        var projectMembers = await _context.ProjectMembers
+            .Where(item => projectIds.Contains(item.ProjectId))
+            .ToListAsync();
+        var membershipKeys = projectMembers
+            .Select(item => (item.ProjectId, item.UserId))
+            .ToHashSet();
+        var tasks = await _context.TaskItems
+            .IgnoreQueryFilters()
+            .Include(item => item.Assignees)
+            .Where(item => projectIds.Contains(item.ProjectId) && !item.IsDeleted)
+            .ToListAsync();
+
+        foreach (var task in tasks)
+        {
+            var assignedUserIds = task.Assignees.Select(item => item.UserId).ToHashSet();
+            if (task.AssigneeId.HasValue && assignedUserIds.Add(task.AssigneeId.Value))
+            {
+                await _context.TaskAssignments.AddAsync(new TaskAssignment
+                {
+                    TaskItemId = task.Id,
+                    UserId = task.AssigneeId.Value,
+                    AssignedByUserId = task.ReporterId,
+                    AssignedAt = task.CreatedAt,
+                    CreatedAt = task.CreatedAt
+                });
+                changed = true;
+            }
+
+            foreach (var userId in assignedUserIds)
+            {
+                if (membershipKeys.Add((task.ProjectId, userId)))
+                {
+                    var project = projects.Single(item => item.Id == task.ProjectId);
+                    await _context.ProjectMembers.AddAsync(new ProjectMember
+                    {
+                        ProjectId = task.ProjectId,
+                        UserId = userId,
+                        Role = userId == project.OwnerId ? "Owner" : "Member",
+                        JoinedAt = now,
+                        CreatedAt = now
+                    });
+                    changed = true;
+                }
+            }
+        }
+
+        var refreshedMembers = projectMembers
+            .Concat(_context.ChangeTracker.Entries<ProjectMember>()
+                .Where(entry => entry.State == EntityState.Added)
+                .Select(entry => entry.Entity))
+            .GroupBy(item => item.ProjectId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        foreach (var task in tasks.Where(item =>
+                     string.Equals(item.Status, "Done", StringComparison.OrdinalIgnoreCase) &&
+                     !item.ReviewerId.HasValue))
+        {
+            var project = projects.Single(item => item.Id == task.ProjectId);
+            var candidates = refreshedMembers.GetValueOrDefault(task.ProjectId, []);
+            task.ReviewerId = candidates
+                .OrderBy(item => item.Role switch
+                {
+                    "Reviewer" => 0,
+                    "Manager" => 1,
+                    "Owner" => 2,
+                    _ => 3
+                })
+                .Select(item => (Guid?)item.UserId)
+                .FirstOrDefault() ?? project.OwnerId;
+            task.UpdatedAt = now;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            await _context.SaveChangesAsync();
+        }
+
+        return changed;
     }
 
     private async Task ClearDemoDataAsync()
@@ -197,7 +334,7 @@ public partial class DataSeeder
         {
             OrganizationId = organization.Id,
             UserId = user.Id,
-            Role = index == 0 ? "Admin" : index <= 2 ? "Manager" : "Member",
+            Role = index == 0 ? OrganizationRoleRules.Owner : index <= 2 ? OrganizationRoleRules.OrganizationAdmin : OrganizationRoleRules.Member,
             JoinedAt = now.AddDays(-68 + index),
             CreatedAt = now.AddDays(-68 + index)
         }));
@@ -577,7 +714,8 @@ public partial class DataSeeder
             ("thanh.tam@qaly.dev", "Reviewer"),
             ("mai.phuong@qaly.dev", "Member"),
             ("yen.nhi@qaly.dev", "Viewer"),
-            ("viet.long@qaly.dev", "Customer"));
+            ("viet.long@qaly.dev", "Customer"),
+            ("gia.khang@qaly.dev", "Developer"));
         AddMembers(projectByCode["erumi-local-analytics"],
             ("linh.chi@qaly.dev", "Owner"),
             ("admin@qaly.dev", "Manager"),
@@ -591,6 +729,7 @@ public partial class DataSeeder
             ("thu.ha@qaly.dev", "Member"),
             ("gia.khang@qaly.dev", "Member"),
             ("mai.phuong@qaly.dev", "Member"),
+            ("thanh.tam@qaly.dev", "Reviewer"),
             ("yen.nhi@qaly.dev", "Viewer"));
         AddMembers(projectByCode["field-ops-mobile"],
             ("tuan.kiet@qaly.dev", "Owner"),
@@ -601,7 +740,15 @@ public partial class DataSeeder
             ("thanh.tam@qaly.dev", "Owner"),
             ("admin@qaly.dev", "Manager"),
             ("viet.long@qaly.dev", "Member"),
-            ("bao.ngoc@qaly.dev", "Member"));
+            ("bao.ngoc@qaly.dev", "Member"),
+            ("minh.anh@qaly.dev", "Member"),
+            ("linh.chi@qaly.dev", "Developer"),
+            ("quoc.huy@qaly.dev", "Member"),
+            ("tuan.kiet@qaly.dev", "Tester"),
+            ("gia.khang@qaly.dev", "Developer"),
+            ("mai.phuong@qaly.dev", "Member"),
+            ("yen.nhi@qaly.dev", "Member"),
+            ("thu.ha@qaly.dev", "Member"));
         AddMembers(projectByCode["legacy-crm-cleanup"],
             ("bao.ngoc@qaly.dev", "Owner"),
             ("thu.ha@qaly.dev", "Member"));
@@ -844,6 +991,22 @@ public partial class DataSeeder
         Assign("nova-risk-dashboard", "minh.anh@qaly.dev", "thanh.tam@qaly.dev");
         Assign("mobile-offline-queue", "linh.chi@qaly.dev", "gia.khang@qaly.dev");
         Assign("ops-audit-log", "admin@qaly.dev", "viet.long@qaly.dev");
+
+        foreach (var task in tasks.Values)
+        {
+            if (task.AssigneeId.HasValue && assignments.All(item =>
+                    item.TaskItemId != task.Id || item.UserId != task.AssigneeId.Value))
+            {
+                assignments.Add(new TaskAssignment
+                {
+                    TaskItemId = task.Id,
+                    UserId = task.AssigneeId.Value,
+                    AssignedByUserId = task.ReporterId,
+                    AssignedAt = task.CreatedAt.AddHours(2),
+                    CreatedAt = task.CreatedAt.AddHours(2)
+                });
+            }
+        }
 
         await _context.TaskAssignments.AddRangeAsync(assignments);
         await _context.SaveChangesAsync();

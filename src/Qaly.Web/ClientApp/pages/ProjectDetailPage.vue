@@ -54,6 +54,7 @@ import { showError } from "../composables/use-toast";
 import { promptDialog } from "../composables/use-confirm-dialog";
 import MarkdownIt from "markdown-it";
 import DOMPurify from "dompurify";
+import { canReviewTask, taskTransitionHint } from "../utils/task-transitions";
 
 const {
   activeProjectTab,
@@ -338,7 +339,13 @@ const canShowGitHubTab = computed(
   () => activeProjectTab.value === "github" && !!selectedProject.value,
 );
 const canShowImportModal = computed(
-  () => showImportModal.value && !!selectedProject.value,
+  () =>
+    showImportModal.value &&
+    !!selectedProject.value &&
+    (projectPermissions.value?.canCreateTask ?? false),
+);
+const canCreateTaskInProject = computed(
+  () => projectPermissions.value?.canCreateTask ?? false,
 );
 const canShowTaskComments = computed(
   () => !!selectedTask.value && !selectedTask.value.isRestricted,
@@ -398,12 +405,39 @@ async function triggerProposeResolution() {
 }
 
 function canManageTask(task: DashboardTask) {
-  return isProjectAdmin.value && !task.isRestricted;
+  if (task.isRestricted) return false;
+  const permissions = projectPermissions.value;
+  if (permissions?.canManageAllTasks) return true;
+  if (!permissions?.canUpdateOwnTasks) return false;
+
+  const userId = String(currentUser.value?.id || "").toLowerCase();
+  if (!userId) return false;
+  return [
+    task.reporterId,
+    task.assigneeId,
+    ...(task.assigneeIds ?? []),
+    ...(task.assignees ?? []).map((assignment) => assignment.userId),
+  ].some((candidate) => String(candidate || "").toLowerCase() === userId);
+}
+
+const canContributeToSelectedTask = computed(
+  () =>
+    !!selectedTask.value &&
+    !selectedTask.value.isRestricted &&
+    (projectPermissions.value?.canComment ?? false),
+);
+
+function canRemoveAttachment(attachment: { uploadedById?: string | null }) {
+  if (isProjectAdmin.value) return true;
+  return canContributeToSelectedTask.value &&
+    String(attachment.uploadedById || "").toLowerCase() ===
+      String(currentUser.value?.id || "").toLowerCase();
 }
 
 function canReviewEvidence(attachment: any) {
   return (
-    isProjectAdmin.value && attachment.evidenceApprovalStatus !== "Approved"
+    selectedTask.value && canReviewTask(selectedTask.value, projectPermissions.value, currentUser.value?.id) &&
+    attachment.evidenceApprovalStatus !== "Approved"
   );
 }
 
@@ -538,7 +572,7 @@ function dragDropState(status: string) {
   const task = draggingTask.value;
   if (!isKanbanDragging.value || !task) return "idle";
   if (task.status === status) return "source";
-  return nextStatuses(task.status).includes(status) ? "allowed" : "blocked";
+  return nextStatuses(task).includes(status) ? "allowed" : "blocked";
 }
 
 function kanbanColumnClass(status: string) {
@@ -555,7 +589,7 @@ function isKanbanDropBlocked(status: string) {
 }
 
 function canDropKanbanTask(task: DashboardTask, status: string) {
-  return task.status === status || nextStatuses(task.status).includes(status);
+  return task.status === status ? task.status !== 'Done' : nextStatuses(task).includes(status);
 }
 
 function onDragStart(evt?: { item?: HTMLElement; data?: DashboardTask }) {
@@ -574,7 +608,7 @@ function onDragStart(evt?: { item?: HTMLElement; data?: DashboardTask }) {
 }
 
 function canSelectListStatus(task: DashboardTask, status: string) {
-  return task.status === status || nextStatuses(task.status).includes(status);
+  return task.status === status || nextStatuses(task).includes(status);
 }
 
 function applyMovedTaskToCurrentProject(
@@ -718,6 +752,9 @@ const onDragEnd = async (evt: {
   if (result) {
     applyMovedTaskToCurrentProject(task, newStatus, result);
     closeTaskDetails();
+  } else {
+    // Sortable has already moved the DOM; restore the canonical board on rejection.
+    await loadDashboard();
   }
 };
 
@@ -729,7 +766,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
   )
     return;
 
-  if (e.key.toLowerCase() === "n") {
+  if (e.key.toLowerCase() === "n" && canCreateTaskInProject.value) {
     e.preventDefault();
     createTaskOpen.value = true;
   }
@@ -868,6 +905,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                   </button>
                 </div>
                 <button
+                  v-if="canCreateTaskInProject"
                   class="primary-button primary-button--compact"
                   type="button"
                   @click="
@@ -878,6 +916,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                   <span>Nhiệm vụ</span>
                 </button>
                 <button
+                  v-if="canCreateTaskInProject"
                   class="import-btn-sm"
                   type="button"
                   @click="showImportModal = true"
@@ -897,7 +936,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 
             <Teleport to="body">
               <div
-                v-if="createTaskOpen"
+                v-if="createTaskOpen && canCreateTaskInProject"
                 class="task-modal-backdrop"
                 @click.self="cancelTaskForm"
                 @keydown.esc="cancelTaskForm"
@@ -1078,7 +1117,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                 <VueDraggable
                   :model-value="kanbanTasksByStatus[status]"
                   :animation="200"
-                  draggable=".kanban-card"
+                  draggable=".kanban-card:not(.is-status-locked)"
                   group="tasks"
                   ghost-class="ghost-card"
                   drag-class="dragging-card"
@@ -1096,7 +1135,8 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     v-for="task in kanbanTasksByStatus[status]"
                     :key="task.id"
                     class="kanban-card draggable-item"
-                    :class="{ 'is-selected': selectedTask?.id === task.id }"
+                    :class="{ 'is-selected': selectedTask?.id === task.id, 'is-status-locked': nextStatuses(task).length === 0 }"
+                    :title="task.status === 'Done' ? taskTransitionHint(task.status) : undefined"
                     :data-id="task.id"
                     tabindex="0"
                     role="button"
@@ -1181,6 +1221,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                       • {{ formatDate(task.dueDate) }}
                     </p>
                     <div class="kanban-card__meta">
+                      <span v-if="task.status === 'Done'" class="meta-item" :title="taskTransitionHint(task.status)"><Lock :size="12" /> Đã chốt</span>
                       <span class="meta-item"
                         ><MessageSquare :size="12" />
                         {{ task.commentCount }}</span
@@ -1197,7 +1238,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                     v-if="kanbanTasksByStatus[status].length === 0"
                     class="empty-column-placeholder"
                   >
-                    Thả nhiệm vụ vào đây
+                    {{ status === 'Done' ? 'Chỉ hoàn thành sau khi được duyệt' : 'Thả nhiệm vụ vào đây' }}
                   </div>
                 </VueDraggable>
               </section>
@@ -1252,6 +1293,9 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                 <label class="task-status-select-wrap" @click.stop>
                   <select
                     class="task-status-select"
+                    :aria-label="`Trạng thái nhiệm vụ ${task.title}`"
+                    :disabled="nextStatuses(task).length === 0"
+                    :title="taskTransitionHint(task.status)"
                     :value="task.status"
                     @change.stop="handleListStatusChange(task, $event)"
                   >
@@ -1544,7 +1588,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         <strong>Nhật ký hoạt động và giờ làm</strong>
                       </div>
 
-                      <div class="timer-display glass-card">
+                      <div v-if="projectPermissions?.canTrackTime" class="timer-display glass-card">
                         <div v-if="activeTimer" class="timer-active">
                           <div class="timer-pulse"></div>
                           <span
@@ -1576,7 +1620,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
 
                       <transition name="fade">
                         <div
-                          v-if="showManualForm"
+                          v-if="showManualForm && projectPermissions?.canTrackTime"
                           class="manual-log-form glass-card"
                         >
                           <div class="form-row">
@@ -1649,7 +1693,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           <File :size="16" />
                           <strong>Tệp đính kèm và minh chứng</strong>
                         </div>
-                        <label class="upload-pill">
+                        <label v-if="canContributeToSelectedTask" class="upload-pill">
                           <input type="file" @change="uploadAttachment" />
                           <span>+ Tải lên</span>
                         </label>
@@ -1679,6 +1723,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                           </div>
                           <div class="attachment-card__actions">
                             <label
+                              v-if="selectedTask && canManageTask(selectedTask)"
                               class="evidence-toggle"
                               title="Đánh dấu là minh chứng"
                             >
@@ -1740,7 +1785,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                               </div>
                             </template>
 
-                            <button type="button"
+                            <button v-if="canRemoveAttachment(attachment)" type="button"
                               class="icon-button icon-button--small icon-button--danger"
                               @click="deleteAttachment(attachment)"
                               aria-label="Xóa tệp"
@@ -1809,6 +1854,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeyDown));
                         </div>
 
                         <form
+                          v-if="projectPermissions?.canComment"
                           class="chat-input-area"
                           @submit.prevent="submitComment"
                         >

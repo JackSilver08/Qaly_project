@@ -67,7 +67,8 @@ public sealed record ProjectStaffingCandidateDto(
     string TimeZoneId,
     string CapacityState,
     IReadOnlyList<string> SourceRefs,
-    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyCapacity = null);
+    IReadOnlyList<ProjectWeeklyCapacityDto>? WeeklyCapacity = null,
+    IReadOnlyList<string>? ProfessionalProfiles = null);
 
 public sealed record ProjectStaffingMemberDto(
     Guid UserId,

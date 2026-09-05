@@ -12,7 +12,8 @@ public static class TaskStatusRules
         ["InProgress"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "InReview", "OnHold", "Cancelled", "Done" },
         ["InReview"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "InProgress", "Done", "OnHold", "Cancelled" },
         ["OnHold"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Todo", "InProgress", "Cancelled" },
-        ["Done"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "InReview" },
+        // Reopening completed work is not a normal status/drag operation.
+        ["Done"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
         ["Cancelled"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Todo" }
     };
 

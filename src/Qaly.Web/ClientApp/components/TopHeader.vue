@@ -150,6 +150,8 @@ onBeforeUnmount(() => {
         @click="$emit('notifications')"
       />
 
+      <slot name="demo-switcher"></slot>
+
       <div ref="userMenuRef" class="shell-user-dropdown">
         <button
           ref="userMenuTrigger"

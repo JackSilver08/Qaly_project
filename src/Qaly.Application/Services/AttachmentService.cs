@@ -24,6 +24,7 @@ public class AttachmentService : IAttachmentService
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditLogService _auditLogService;
     private readonly INotificationService _notificationService;
+    private readonly ITaskService _taskService;
 
     public AttachmentService(
         IRepository<TaskAttachment> attachmentRepo,
@@ -36,7 +37,8 @@ public class AttachmentService : IAttachmentService
         IUnitOfWork unitOfWork,
         ICurrentUserService currentUserService,
         IAuditLogService auditLogService,
-        INotificationService notificationService)
+        INotificationService notificationService,
+        ITaskService taskService)
     {
         _attachmentRepo = attachmentRepo;
         _physicalFileRepo = physicalFileRepo;
@@ -49,6 +51,7 @@ public class AttachmentService : IAttachmentService
         _currentUserService = currentUserService;
         _auditLogService = auditLogService;
         _notificationService = notificationService;
+        _taskService = taskService;
     }
 
     public async Task<Result<IReadOnlyList<TaskAttachmentDto>>> GetByTaskAsync(Guid taskItemId, CancellationToken ct = default)
@@ -293,6 +296,19 @@ public class AttachmentService : IAttachmentService
             },
             ct);
 
+        // An approved review is the final workflow gate. Complete through TaskService so the
+        // canonical transition rules, audit, notifications and integration outboxes all run.
+        if (approve && string.Equals(attachment.TaskItem.Status, "InReview", StringComparison.OrdinalIgnoreCase))
+        {
+            var completion = await _taskService.UpdateStatusAsync(attachment.TaskItem.Id, "Done", ct: ct);
+            if (!completion.IsSuccess)
+            {
+                return Result.Failure<TaskAttachmentDto>(
+                    completion.Error ?? "Minh chứng đã được duyệt nhưng nhiệm vụ chưa thể hoàn thành.",
+                    completion.StatusCode);
+            }
+        }
+
         await NotifyEvidenceReviewedAsync(attachment, approve, currentUserId.Value, ct);
 
         return Result.Success(attachment.ToDto());
@@ -425,31 +441,8 @@ public class AttachmentService : IAttachmentService
 
     private async Task<bool> CanReviewEvidenceAsync(TaskItem task, Guid currentUserId, CancellationToken ct)
     {
-        var project = task.Project;
-        if (project == null)
-        {
-            return false;
-        }
-
-        if (!await _taskAccessPolicy.CanAccessTaskAsync(task, ct))
-        {
-            return false;
-        }
-
-        if (await _taskAccessPolicy.CanManageProjectAsync(project.Id, project.OwnerId, ct))
-        {
-            return true;
-        }
-
-        var projectRole = await _memberRepo.GetQueryable()
-            .Where(member => member.ProjectId == task.ProjectId && member.UserId == currentUserId)
-            .Select(member => member.Role)
-            .FirstOrDefaultAsync(ct);
-        var resolvedRole = await _roleCatalog.ResolveAsync(projectRole, project.OrganizationId, ct);
-        return resolvedRole != null && ProjectPermissionRules.Resolve(
-            resolvedRole.BaseRole,
-            isOwner: false,
-            isSystemAdmin: false).CanReviewEvidence;
+        return currentUserId == _currentUserService.UserId &&
+               await _taskAccessPolicy.CanReviewTaskAsync(task, ct);
     }
 
     public async Task<Result<IReadOnlyList<DuplicateFileDto>>> GetDuplicatesAsync(CancellationToken ct = default)
